@@ -912,7 +912,10 @@ synch_3 s_allcomplete(dataslot_allcomplete, dataslot_allcomplete_s, clk_sys);
 wire reset_n_s;
 synch_3 s_reset_n(reset_n, reset_n_s, clk_sys);
 
-wire reset_gba = ~pll_core_locked | ~dataslot_allcomplete_s | ~reset_n_s;
+wire core_reset_s;
+synch_3 s_core_reset(core_reset, core_reset_s, clk_sys);
+
+wire reset_gba = ~pll_core_locked | ~dataslot_allcomplete_s | ~reset_n_s | core_reset_s;
 
 // ---- BIOS Loading via data_loader → gba_top internal BRAM ----
 // BIOS (16 KB) loads from data slot 4 at address 0x3xxxxxxx
@@ -1249,9 +1252,16 @@ end
 reg ff_mode = 0;    // 0 = Hold, 1 = Toggle
 reg force_rtc = 0;  // 0 = Off, 1 = Force enable RTC/GPIO
 
+reg [13:0] reset_counter = 0;
+wire       core_reset = (reset_counter != 0);
+
 always @(posedge clk_74a) begin
+    if (reset_counter != 0)
+        reset_counter <= reset_counter - 1;
+
     if (bridge_wr) begin
         casex (bridge_addr)
+        32'hF0000000: reset_counter <= 14'd8000;  // ~108 us at 74.25 MHz
         32'h80: ff_mode   <= bridge_wr_data[0];
         32'h84: force_rtc <= bridge_wr_data[0];
         endcase
