@@ -29,6 +29,26 @@
             "value": 1
           }
         ]
+      },
+      {
+        "name": "Force RTC (Dangerous)",
+        "id": 30,
+        "type": "list",
+        "enabled": true,
+        "address": "0x84",
+        "persist": true,
+        "writeonly": true,
+        "defaultval": 0,
+        "options": [
+          {
+            "name": "Off",
+            "value": 0
+          },
+          {
+            "name": "On",
+            "value": 1
+          }
+        ]
       }
     ],
     "messages": []

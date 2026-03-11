@@ -806,6 +806,19 @@ sync_fifo #(.WIDTH(32)) rtc_sync (
     .write_en_s  ( rtc_new_s )
 );
 
+// CDC for Pocket BCD date/time (used as fallback when no save RTC exists)
+wire [63:0] rtc_bcd_s;
+wire        rtc_bcd_new_s;
+
+sync_fifo #(.WIDTH(64)) rtc_bcd_sync (
+    .clk_write   ( clk_74a ),
+    .clk_read    ( clk_sys ),
+    .write_en    ( rtc_valid ),
+    .data        ( {rtc_date_bcd, rtc_time_bcd} ),
+    .data_s      ( rtc_bcd_s ),
+    .write_en_s  ( rtc_bcd_new_s )
+);
+
 // ---- RTC Persistence ----
 // RTC data is appended as 5 x 16-bit words (10 bytes) after cart save data.
 // During boot load: snoop save_loader for RTC region, capture into registers.
@@ -843,6 +856,19 @@ always @(posedge clk_sys) begin
             rtc_loaded_savedtime[31:16] <= save_loader_data;
         if (save_loader_addr[23:0] == save_size_sys + 24'd8)
             rtc_loaded_savedtime[41:32] <= save_loader_data[9:0];
+    end else if (!rtc_data_captured && dataslot_allcomplete_s && rtc_bcd_received) begin
+        // No save RTC data — seed from Pocket's real-time clock
+        rtc_loaded_savedtime <= {
+            rtc_bcd_s[55:48],     // [41:34] year BCD
+            rtc_bcd_s[44:40],     // [33:29] month BCD (5b)
+            rtc_bcd_s[37:32],     // [28:23] day BCD (6b)
+            rtc_bcd_s[26:24],     // [22:20] weekday (3b)
+            rtc_bcd_s[21:16],     // [19:14] hour BCD (6b)
+            rtc_bcd_s[14:8],      // [13:7]  minute BCD (7b)
+            rtc_bcd_s[6:0]        // [6:0]   second BCD (7b)
+        };
+        rtc_loaded_timestamp <= rtc_epoch_s;  // matches current time -> diffSeconds = 0
+        rtc_data_captured    <= 1;            // allows rtc_save_loaded to fire
     end
 end
 
@@ -853,6 +879,15 @@ always @(posedge clk_sys) begin
         rtc_epoch_received <= 0;
     else if (rtc_new_s)
         rtc_epoch_received <= 1;
+end
+
+// Track whether Pocket BCD date/time has arrived (for fallback when no save RTC)
+reg rtc_bcd_received;
+always @(posedge clk_sys) begin
+    if (~pll_core_locked)
+        rtc_bcd_received <= 0;
+    else if (rtc_bcd_new_s)
+        rtc_bcd_received <= 1;
 end
 
 // Assert rtc_save_loaded after boot completes, RTC data captured, AND epoch received.
@@ -873,7 +908,11 @@ synch_3 s_allcomplete(dataslot_allcomplete, dataslot_allcomplete_s, clk_sys);
 // ---- GBA Reset ----
 // Core stays in reset until PLL locks AND all data slots finish loading.
 // Save detection and quirk lookup complete during download (before allcomplete).
-wire reset_gba = ~pll_core_locked | ~dataslot_allcomplete_s;
+// reset_n is in clk_74a domain — synchronize to clk_sys before use.
+wire reset_n_s;
+synch_3 s_reset_n(reset_n, reset_n_s, clk_sys);
+
+wire reset_gba = ~pll_core_locked | ~dataslot_allcomplete_s | ~reset_n_s;
 
 // ---- BIOS Loading via data_loader → gba_top internal BRAM ----
 // BIOS (16 KB) loads from data slot 4 at address 0x3xxxxxxx
@@ -1207,19 +1246,24 @@ end
 
 
 // ---- Interact menu config registers (clk_74a domain) ----
-reg ff_mode = 0; // 0 = Hold, 1 = Toggle
+reg ff_mode = 0;    // 0 = Hold, 1 = Toggle
+reg force_rtc = 0;  // 0 = Off, 1 = Force enable RTC/GPIO
 
 always @(posedge clk_74a) begin
     if (bridge_wr) begin
         casex (bridge_addr)
-        32'h80: ff_mode <= bridge_wr_data[0];
+        32'h80: ff_mode   <= bridge_wr_data[0];
+        32'h84: force_rtc <= bridge_wr_data[0];
         endcase
     end
 end
 
-// ---- CDC: ff_mode → clk_sys ----
+// ---- CDC: ff_mode, force_rtc → clk_sys ----
 wire ff_mode_s;
 synch_3 ff_mode_sync(ff_mode, ff_mode_s, clk_sys);
+
+wire force_rtc_s;
+synch_3 force_rtc_sync(force_rtc, force_rtc_s, clk_sys);
 
 // ============================================================
 // Section 4: Video Output — framebuffer + raster scan
@@ -1418,7 +1462,7 @@ gba_top #(
     .save_state          ( ss_save ),
     .load_state          ( ss_load ),
     .maxpixels           ( quirk_sprite ),
-    .specialmodule       ( quirk_gpio ),
+    .specialmodule       ( quirk_gpio | force_rtc_s ),
     // solar/tilt/rumble removed to save ALMs
     .savestate_number    ( 0 ),
     // RTC

@@ -4,10 +4,12 @@ Ported from [MiSTer GBA core](https://github.com/MiSTer-devel/GBA_MiSTer)
 
 ## Features
 
+- **Cart Saves**
 - **Save States**
 - **Fast Forward**
 - **RTC**
-- **Cart Saves**
+- **FORCE RTC** — Manually enables RTC for ROMs that aren't in the database. This is useful for ROM hacks that add RTC support to games that don't normally use it (like a certain "unbound" hack). Make sure to enable this on first load of the hack, ideally as soon as possible during the bios display to avoid any issues with initializing the save. **USE WITH CAUTION:** enabling this on a game that doesn't actually use RTC can cause crashes or glitches.
+### **⚠️WARNING: This setting persists across games! Remember to turn it off before loading a game that doesn't need it⚠️**
 
 ##  Currently Not Included
 
