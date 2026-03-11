@@ -23,10 +23,15 @@ LLM assisted port of [MiSTer GBA core](https://github.com/MiSTer-devel/GBA_MiSTe
 
 The original MiSTer core was built for an FPGA chip roughly twice the size of the one inside the Analogue Pocket. Some extras had to go to make it all fit. I tried to prioritize things that could be fixed with romhacks, for example there is a solar patch that fixes this issues without the core needing to do anything. Link cable support was a rough one, my thinking there is you can switch cores temporarily if you want to use link cable features. I may try to add that one back in we'll see. Also maybe possible to do simple color desaturation.
 
+##  I am looking for the most accurate core possible. I crave accuracy.
+
+Probably not the core for you, many sacrifices were made to cram this together. This core absolutely prioritizes the fun and convenience of extra features over accuracy. Although it should be pretty accurate... I ran a lot of test roms and it did pretty well.
+
 ## Installation
 
 1. Download the latest release
 2. Copy the 3 folders `Cores/`, `Platforms/`, `Assets/`  to your SD card
+   - **macOS users:** Note: macOS Finder replaces folders instead of merging them so do it all manually and be careful.
 3. Place your ROMs and `gba_bios.bin` in `/Assets/gba/common/`
 
 ## Building from Source
