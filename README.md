@@ -5,8 +5,9 @@ Ported from [MiSTer GBA core](https://github.com/MiSTer-devel/GBA_MiSTer)
 ## Features
 
 - **Cart Saves**
+- **Filters**
 - **Save States**
-- **Fast Forward**
+- **Fast Forward (Bound to Y button)**
 - **RTC**
 - **FORCE RTC** — Manually enables RTC for ROMs that aren't in the database. This is useful for ROM hacks that add RTC support to games that don't normally use it (like a certain "unbound" hack). Make sure to enable this on first load of the hack, ideally as soon as possible during the bios display to avoid any issues with initializing the save. **USE WITH CAUTION:** enabling this on a game that doesn't actually use RTC can cause crashes or glitches.
 ### **⚠️WARNING: This setting persists across games! Remember to turn it off before loading a game that doesn't need it⚠️**
@@ -18,31 +19,19 @@ Ported from [MiSTer GBA core](https://github.com/MiSTer-devel/GBA_MiSTer)
 - **Solar Sensor**
 - **Cheats**
 - **Rewind**
+- **Color correction outside default pocket filters**
 
-The original MiSTer core was built for an FPGA chip roughly twice the size of the one inside the Analogue Pocket. Some extras had to go to make it all fit. I tried to prioritize things that could be fixed with romhacks, for example there is a solar patch that fixes this issues without the core needing to do anything. Link cable support was a rough one, my thinking there is you can switch cores temporarily if you want to use link cable features. I may try to add that one back in we'll see.
+The original MiSTer core was built for an FPGA chip roughly twice the size of the one inside the Analogue Pocket. Some extras had to go to make it all fit. I tried to prioritize things that could be fixed with romhacks, for example there is a solar patch that fixes this issues without the core needing to do anything. Link cable support was a rough one, my thinking there is you can switch cores temporarily if you want to use link cable features. I may try to add that one back in we'll see. Also maybe possible to do simple color desaturation.
 
 ## Installation
 
 1. Download the latest release
-2. Copy the `Cores/mincer_ray.GBA/` folder to your SD card under `/Cores/`
-3. Copy the `Platforms/` folder to your SD card (if not already present)
-4. Place your GBA ROMs (`.gba`) anywhere on the SD card
-5. Place `gba_bios.bin` (16KB) in `/Assets/gba/common/`
-
-## Controls
-
-| Button | Function |
-|--------|----------|
-| D-Pad | Directional input |
-| A | A |
-| B | B |
-| Start | Start |
-| Select | Select |
-| L | L shoulder |
-| R | R shoulder |
-| Y | Fast Forward |
+2. Copy the 3 folders `Cores/`, `Platforms/`, `Assets/`  to your SD card
+3. Place your ROMs and `gba_bios.bin` in `/Assets/gba/common/`
 
 ## Building from Source
+
+Should be very easy
 
 ### Prerequisites
 
@@ -55,32 +44,9 @@ The original MiSTer core was built for an FPGA chip roughly twice the size of th
 ./scripts/build.sh
 ```
 
-The build takes ~10 minutes locally. Output bitstream is placed in the package directory.
-
-## Technical Details
-
-**Target FPGA:** Intel Cyclone V 5CEBA4F23C8
-
-| Resource | Usage |
-|----------|-------|
-| ALMs | 89% (16,384 / 18,480) |
-| RAM Blocks | 91% (279 / 308) |
-| DSP Blocks | 48% (32 / 66) |
-| PLLs | 50% (2 / 4) |
-
-**Clocks:**
-- `clk_sys` — 100.66 MHz (GBA system clock)
-- `clk_mem` — 133.12 MHz (SDRAM)
-
-**Memory map:**
-- SDRAM ch1 — Game ROM (up to 32MB)
-- SDRAM ch2 — EWRAM (256KB)
-- BRAM — IWRAM, VRAM, Palette, OAM, BIOS
-- PSRAM — Cart saves (die 1)
-
 ## Known Issues
 
-- Timing closure fails at slow corner (85C) by -0.396 ns. The design passes at room temperature and is functionally stable, but is not formally timing clean at worst case conditions. This is a consequence of fitting the GBA core into an FPGA with 44% of the ALMs it was designed for.
+- will go here
 
 ## Credits
 
