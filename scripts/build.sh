@@ -19,5 +19,9 @@ echo "=== Build complete, reversing bitstream ==="
 python3 "$SCRIPT_DIR/reverse_bitstream.py" "$RBF" "$RBF_R"
 
 echo ""
+"$SCRIPT_DIR/print_timing.sh" \
+  "$PROJECT_DIR/src/fpga/build/output_files/ap_core.sta.summary" \
+  "$PROJECT_DIR/build_output/reports/ap_core.sta.clock_summary.rpt"
+
 echo "=== Done! ==="
 echo "Bitstream: $RBF_R"

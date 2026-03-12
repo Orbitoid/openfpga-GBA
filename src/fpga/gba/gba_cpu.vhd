@@ -2019,7 +2019,7 @@ begin
             end if;
          end if;
          
-         if (busPrefetchClear = '1' or unsigned(PC(27 downto 24)) < 16#8#) then -- clear when access to gamepak or jump
+         if (busPrefetchClear = '1' or unsigned(PC(27 downto 24)) < 16#8# or (dma_new_cycles = '1' and dma_cycles_adrup(3) = '1')) then -- clear when access to gamepak, jump, or DMA touches ROM bus (invalidating prefetch buffer)
             busPrefetchCnt <= 0;
          end if;
 
