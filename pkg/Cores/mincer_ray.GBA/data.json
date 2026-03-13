@@ -15,7 +15,7 @@
         "name": "BIOS",
         "id": 4,
         "required": false,
-        "parameters": 136,
+        "parameters": "0x88",
         "filename": "gba_bios.bin",
         "extensions": ["bin"],
         "address": "0x30000000",

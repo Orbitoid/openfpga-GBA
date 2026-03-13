@@ -81,11 +81,12 @@ for seed in $(seq "$START_SEED" "$END_SEED"); do
     cp -f "$PROJECT_DIR/src/fpga/build/output_files/ap_core.sta.summary" "$SEED_DIR/" 2>/dev/null || true
     cp -f "$PROJECT_DIR/src/fpga/build/output_files/ap_core.fit.summary" "$SEED_DIR/" 2>/dev/null || true
 
-    # Track best seed (using slow 85C as worst case)
-    if [[ "$SLOW_85C" != "N/A" ]]; then
-        IS_BETTER=$(awk "BEGIN {print ($SLOW_85C > $BEST_SLACK) ? 1 : 0}")
+    # Track best seed (using worst of slow 85C and slow 0C due to temperature inversion)
+    if [[ "$SLOW_85C" != "N/A" && "$SLOW_0C" != "N/A" ]]; then
+        WORST_SLACK=$(awk "BEGIN {print ($SLOW_85C < $SLOW_0C) ? $SLOW_85C : $SLOW_0C}")
+        IS_BETTER=$(awk "BEGIN {print ($WORST_SLACK > $BEST_SLACK) ? 1 : 0}")
         if [[ "$IS_BETTER" == "1" ]]; then
-            BEST_SLACK="$SLOW_85C"
+            BEST_SLACK="$WORST_SLACK"
             BEST_SEED="$seed"
             mkdir -p "$RESULTS_DIR/best"
             cp -f "$PROJECT_DIR/src/fpga/build/output_files/ap_core.rbf" "$RESULTS_DIR/best/" 2>/dev/null || true
@@ -94,7 +95,7 @@ for seed in $(seq "$START_SEED" "$END_SEED"); do
 done
 
 echo "" | tee -a "$RESULTS_FILE"
-echo "**BEST: Seed $BEST_SEED with slack $BEST_SLACK ns (slow 85C)**" | tee -a "$RESULTS_FILE"
+echo "**BEST: Seed $BEST_SEED with slack $BEST_SLACK ns (worst of slow 85C/0C)**" | tee -a "$RESULTS_FILE"
 echo "Finished: $(date)" | tee -a "$RESULTS_FILE"
 
 if [[ -f "$RESULTS_DIR/best/ap_core.rbf" ]]; then
