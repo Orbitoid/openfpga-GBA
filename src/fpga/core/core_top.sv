@@ -1262,8 +1262,9 @@ end
 
 
 // ---- Interact menu config registers (clk_74a domain) ----
-reg ff_mode = 0;    // 0 = Hold, 1 = Toggle
-reg force_rtc = 0;  // 0 = Off, 1 = Force enable RTC/GPIO
+reg [1:0] ff_mode = 0;    // 0 = Hold, 1 = Toggle, 2 = Disabled
+reg force_rtc = 0;        // 0 = Off, 1 = Force enable RTC/GPIO
+reg [1:0] turbo_mode = 0; // 0 = Disabled, 1 = Turbo A, 2 = Turbo B
 
 reg [13:0] reset_counter = 0;
 wire       core_reset = (reset_counter != 0);
@@ -1275,18 +1276,22 @@ always @(posedge clk_74a) begin
     if (bridge_wr) begin
         casex (bridge_addr)
         32'hF0000000: reset_counter <= 14'd8000;  // ~108 us at 74.25 MHz
-        32'h80: ff_mode   <= bridge_wr_data[0];
-        32'h84: force_rtc <= bridge_wr_data[0];
+        32'h80: ff_mode    <= bridge_wr_data[1:0];
+        32'h84: force_rtc  <= bridge_wr_data[0];
+        32'h88: turbo_mode <= bridge_wr_data[1:0];
         endcase
     end
 end
 
-// ---- CDC: ff_mode, force_rtc → clk_sys ----
-wire ff_mode_s;
-synch_3 ff_mode_sync(ff_mode, ff_mode_s, clk_sys);
+// ---- CDC: ff_mode, force_rtc, turbo_mode → clk_sys ----
+wire [1:0] ff_mode_s;
+synch_3 #(.WIDTH(2)) ff_mode_sync(ff_mode, ff_mode_s, clk_sys);
 
 wire force_rtc_s;
 synch_3 force_rtc_sync(force_rtc, force_rtc_s, clk_sys);
+
+wire [1:0] turbo_mode_s;
+synch_3 #(.WIDTH(2)) turbo_mode_sync(turbo_mode, turbo_mode_s, clk_sys);
 
 // ============================================================
 // Section 4: Video Output — framebuffer + raster scan
@@ -1361,9 +1366,22 @@ synch_3 #(.WIDTH(32)) cont1_sync (
 
 // GBA buttons — active-high (1 = pressed), matching gba_top.vhd Key* ports
 // Pocket cont1_key is also active-high, so no inversion needed
-// Pocket bitmap: [0]=up [1]=down [2]=left [3]=right [4]=A [5]=B [8]=L1 [9]=R1 [14]=sel [15]=start
-wire key_a      = cont1_key_s[4];
-wire key_b      = cont1_key_s[5];
+// Pocket bitmap: [0]=up [1]=down [2]=left [3]=right [4]=A [5]=B [6]=X [7]=Y [8]=L1 [9]=R1 [14]=sel [15]=start
+
+// X button (bit 6) — Turbo, not a GBA button
+wire x_button = cont1_key_s[6];
+
+// Turbo: free-running counter, bit[20] toggles at ~48 Hz → ~24 presses/sec
+reg [20:0] turbo_counter = 0;
+always @(posedge clk_sys)
+    turbo_counter <= turbo_counter + 1'd1;
+
+wire turbo_pulse = turbo_counter[20];
+wire turbo_a = (turbo_mode_s == 2'd1) && x_button && turbo_pulse;
+wire turbo_b = (turbo_mode_s == 2'd2) && x_button && turbo_pulse;
+
+wire key_a      = cont1_key_s[4] | turbo_a;
+wire key_b      = cont1_key_s[5] | turbo_b;
 wire key_select = cont1_key_s[14];
 wire key_start  = cont1_key_s[15];
 wire key_up     = cont1_key_s[0];
@@ -1376,6 +1394,7 @@ wire key_l      = cont1_key_s[8];
 // Y button (bit 7) — Fast Forward, not a GBA button
 // Hold mode: active while button pressed
 // Toggle mode: press toggles on/off
+// Disabled mode: fast forward button does nothing
 wire ff_button = cont1_key_s[7];
 
 reg ff_button_prev = 0;
@@ -1388,7 +1407,9 @@ always @(posedge clk_sys) begin
         ff_toggle_state <= ~ff_toggle_state;
 end
 
-wire fast_forward = ff_mode_s ? ff_toggle_state : ff_button;
+wire fast_forward = (ff_mode_s == 2'd2) ? 1'b0 :            // Disabled
+                    (ff_mode_s == 2'd1) ? ff_toggle_state :  // Toggle
+                    ff_button;                               // Hold (default)
 
 
 // ============================================================
