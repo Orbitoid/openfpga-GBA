@@ -440,7 +440,63 @@ always @(posedge clk_sys) begin
     end
 end
 
-// PSRAM mux: priority encode loader > unloader > bus_out
+// ---- PSRAM die 1 clear (no-save boot) ----
+// PSRAM retains data across FPGA reconfiguration. When no save file is
+// loaded (first boot of a game), stale data from a previous session could
+// appear as a valid save. Clear die 1 to 0xFF after boot if no save arrived.
+
+reg save_data_received;
+always @(posedge clk_sys) begin
+    if (~pll_core_locked)
+        save_data_received <= 0;
+    else if (save_loader_wr)
+        save_data_received <= 1;
+end
+
+localparam CLR_IDLE = 2'd0, CLR_WR = 2'd1, CLR_WAIT = 2'd2;
+reg  [1:0]  clr_state;
+reg  [16:0] clr_addr;    // [16]=done flag, [15:0]=word addr (128 KB = 64K words)
+reg         clr_wr;       // 1-cycle write pulse
+reg         clr_guard;    // 1-cycle guard for psram_busy propagation
+wire        save_clear_done = clr_addr[16];
+wire        save_mem_ready  = save_data_received | save_clear_done;
+
+always @(posedge clk_sys) begin
+    clr_wr <= 0;
+    if (~pll_core_locked) begin
+        clr_state <= CLR_IDLE;
+        clr_addr  <= 0;
+        clr_guard <= 0;
+    end else begin
+        case (clr_state)
+            CLR_IDLE: begin
+                if (dataslot_allcomplete_s && !save_data_received && !save_clear_done)
+                    clr_state <= CLR_WR;
+            end
+            CLR_WR: begin
+                clr_wr    <= 1;
+                clr_guard <= 1;
+                clr_state <= CLR_WAIT;
+            end
+            CLR_WAIT: begin
+                if (clr_guard) begin
+                    clr_guard <= 0;
+                end else if (!psram_busy) begin
+                    if (clr_addr[15:0] == 16'hFFFF) begin
+                        clr_addr  <= clr_addr + 1;  // sets [16] = done
+                        clr_state <= CLR_IDLE;
+                    end else begin
+                        clr_addr  <= clr_addr + 1;
+                        clr_state <= CLR_WR;
+                    end
+                end
+            end
+            default: clr_state <= CLR_IDLE;
+        endcase
+    end
+end
+
+// PSRAM mux: priority encode loader > clear > unloader > bus_out
 always @(*) begin
     if (save_loader_wr) begin
         // Save loader write → die 1
@@ -449,6 +505,15 @@ always @(*) begin
         psram_bank_sel   = 1;  // die 1
         psram_addr       = save_loader_addr[21:1]; // byte→word addr (drop bit 0)
         psram_data_in    = save_loader_data;
+        psram_write_high = 1;
+        psram_write_low  = 1;
+    end else if (clr_wr) begin
+        // Save clear write → die 1 (no-save boot)
+        psram_write_en   = 1;
+        psram_read_en    = 0;
+        psram_bank_sel   = 1;  // die 1
+        psram_addr       = {6'b0, clr_addr[15:0]}; // word addr
+        psram_data_in    = 16'hFFFF;
         psram_write_high = 1;
         psram_write_low  = 1;
     end else if (save_unloader_rd && !save_unload_pending && !save_unload_is_rtc) begin
@@ -916,7 +981,7 @@ synch_3 s_reset_n(reset_n, reset_n_s, clk_sys);
 wire core_reset_s;
 synch_3 s_core_reset(core_reset, core_reset_s, clk_sys);
 
-wire reset_gba = ~pll_core_locked | ~dataslot_allcomplete_s | ~reset_n_s | core_reset_s;
+wire reset_gba = ~pll_core_locked | ~dataslot_allcomplete_s | ~reset_n_s | core_reset_s | ~save_mem_ready;
 
 // ---- BIOS Loading via data_loader → gba_top internal BRAM ----
 // BIOS (16 KB) loads from data slot 4 at address 0x3xxxxxxx
