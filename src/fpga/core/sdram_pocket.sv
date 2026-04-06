@@ -25,6 +25,7 @@
 
 module sdram_pocket (
     input  wire        clk,          // ~100 MHz system clock
+    input  wire        clk_sdram,    // ~100 MHz, 90° phase — drives SDRAM CLK pin directly
     input  wire        reset,        // Active-high reset (active while PLL not locked)
 
     // Ch1: ROM reads (active during gameplay)
@@ -407,29 +408,13 @@ always @(posedge clk) begin
 end
 
 // ============================================================
-// DDR Clock Output (0deg outclock -> 180deg SDRAM_CLK, matches MiSTer)
+// SDRAM Clock Output — driven directly from PLL at 90° phase
 // ============================================================
+// Previous design used an ALTDDIO_OUT DDR primitive to shift the clock,
+// but that prevents the timing analyzer from constraining the path.
+// Driving from a dedicated PLL output gives a clean, timing-analyzable 90°
+// phase that centers the SDRAM clock edge in the data valid window.
 
-altddio_out #(
-    .extend_oe_disable   ("OFF"),
-    .intended_device_family ("Cyclone V"),
-    .invert_output       ("OFF"),
-    .lpm_hint            ("UNUSED"),
-    .lpm_type            ("altddio_out"),
-    .oe_reg              ("UNREGISTERED"),
-    .power_up_high       ("OFF"),
-    .width               (1)
-) sdramclk_ddr (
-    .datain_h  (1'b0),
-    .datain_l  (1'b1),
-    .outclock  (clk),
-    .dataout   (dram_clk),
-    .aclr      (1'b0),
-    .aset      (1'b0),
-    .oe        (1'b1),
-    .outclocken(1'b1),
-    .sclr      (1'b0),
-    .sset      (1'b0)
-);
+assign dram_clk = clk_sdram;
 
 endmodule

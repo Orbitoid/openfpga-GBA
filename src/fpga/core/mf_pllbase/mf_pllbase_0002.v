@@ -4,7 +4,7 @@
 //
 // System PLL (sys_pll_i):
 //   Out 0:  100.663296 MHz (0 deg)   — GBA system clock (6 * 2^24 Hz)
-//   Out 1:  100.663296 MHz (270 deg) — SDRAM DDR outclock (altddio_out adds 180° → 90° SDRAM_CLK)
+//   Out 1:  100.663296 MHz (90 deg)  — SDRAM clock (driven directly to pin, no DDR primitive)
 //
 // Video PLL (vid_pll_i):
 //   Out 2:  8.388608 MHz (0 deg)     — Video pixel clock (2× GBA dot clock)
@@ -31,7 +31,7 @@ module mf_pllbase_0002 (
 	wire vid_locked;
 	assign locked = sys_locked & vid_locked;
 
-	// ---- System PLL — 100.663296 MHz (0° and 90°) ----
+	// ---- System PLL — 100.663296 MHz (0° sys, 90° SDRAM) ----
 	altera_pll #(
 		.fractional_vco_multiplier("true"),
 		.reference_clock_frequency("74.25 MHz"),
@@ -41,7 +41,7 @@ module mf_pllbase_0002 (
 		.phase_shift0("0 ps"),
 		.duty_cycle0(50),
 		.output_clock_frequency1("100.663296 MHz"),
-		.phase_shift1("7451 ps"),
+		.phase_shift1("2484 ps"),
 		.duty_cycle1(50),
 		.output_clock_frequency2("0 MHz"),
 		.phase_shift2("0 ps"),

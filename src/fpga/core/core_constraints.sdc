@@ -5,9 +5,8 @@
 #
 
 # Clock groups: sys_pll outputs 0 and 1 are phase-related (same VCO),
-# so they belong in the SAME group. Previously they were in separate
-# asynchronous groups, which told Quartus to skip timing analysis between them.
-# Output 1 (clk_sys_90) is currently unused but keep it grouped correctly.
+# so they belong in the SAME group. Output 1 (clk_sys_90, 90° phase)
+# drives the SDRAM CLK pin directly from the PLL — no DDR primitive.
 set_clock_groups -asynchronous \
  -group { bridge_spiclk } \
  -group { clk_74a } \
