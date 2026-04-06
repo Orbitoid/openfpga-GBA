@@ -49,5 +49,19 @@ set_output_delay -clock sdram_clk -min -0.8 \
   [get_ports {dram_a[*] dram_ba[*] dram_dq[*] dram_dqm[*] dram_ras_n dram_cas_n dram_we_n dram_cke}]
 
 # Read path: input delay for DQ relative to sdram_clk
+# tAC = 6.0 ns max (access time from CLK, CL=2)
+# tOH = 2.5 ns min (output hold from CLK)
 set_input_delay -clock sdram_clk -max 6.0 [get_ports {dram_dq[*]}]
 set_input_delay -clock sdram_clk -min 2.5 [get_ports {dram_dq[*]}]
+
+# Multicycle path for SDRAM read capture:
+# With 270° phase, only 2.48 ns separates the sdram_clk edge from the
+# next clk_sys edge — less than tAC (6 ns). Data cannot be captured on
+# that immediate edge; it is captured one cycle later. Multicycle setup
+# of 2 gives 2.48 + 9.93 = 12.41 ns of available time, which easily
+# accommodates tAC. Without this, the fitter thrashes on an impossible
+# single-cycle target and degrades all other timing.
+set_multicycle_path -setup -from [get_clocks {sdram_clk}] \
+  -to [get_clocks {ic|mp1|mf_pllbase_inst|sys_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk}] 2
+set_multicycle_path -hold -from [get_clocks {sdram_clk}] \
+  -to [get_clocks {ic|mp1|mf_pllbase_inst|sys_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk}] 1
