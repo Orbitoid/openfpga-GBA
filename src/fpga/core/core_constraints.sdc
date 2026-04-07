@@ -70,3 +70,33 @@ set_multicycle_path -setup -from [get_clocks {sdram_clk}] \
   -to [get_clocks {ic|mp1|mf_pllbase_inst|sys_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk}] 2
 set_multicycle_path -hold -from [get_clocks {sdram_clk}] \
   -to [get_clocks {ic|mp1|mf_pllbase_inst|sys_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk}] 1
+
+# Savestate internal bus pipeline:
+# The address fan-out from gba_savestates to hundreds of eProcReg_gba
+# instances takes ~10.7 ns (combinational decode MUX), exceeding the
+# 9.93 ns clock period.  The RTL gates done_r/dout_r capture with
+# bus_wait, ensuring Adr is stable for a full extra cycle before
+# sampling.  On the write side, a settle state separates the Adr
+# change from the ena pulse.  Both give the decode 2 full clock
+# periods (~20 ns) to resolve.
+#
+# Read path: Adr → combinational decode → done_r / dout_r
+set_multicycle_path -setup 2 \
+  -from [get_registers {*igba_savestates|internal_bus_out.Adr*}] \
+  -to   [get_registers {*igba_savestates|done_r}]
+set_multicycle_path -hold 1 \
+  -from [get_registers {*igba_savestates|internal_bus_out.Adr*}] \
+  -to   [get_registers {*igba_savestates|done_r}]
+set_multicycle_path -setup 2 \
+  -from [get_registers {*igba_savestates|internal_bus_out.Adr*}] \
+  -to   [get_registers {*igba_savestates|dout_r[*]}]
+set_multicycle_path -hold 1 \
+  -from [get_registers {*igba_savestates|internal_bus_out.Adr*}] \
+  -to   [get_registers {*igba_savestates|dout_r[*]}]
+# Write path: Adr → address compare in eProcReg_gba → Dout_buffer
+set_multicycle_path -setup 2 \
+  -from [get_registers {*igba_savestates|internal_bus_out.Adr*}] \
+  -to   [get_registers {*eProcReg_gba*Dout_buffer*}]
+set_multicycle_path -hold 1 \
+  -from [get_registers {*igba_savestates|internal_bus_out.Adr*}] \
+  -to   [get_registers {*eProcReg_gba*Dout_buffer*}]
