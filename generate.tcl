@@ -1,15 +1,17 @@
 package require ::quartus::project
 package require ::quartus::flow
 
+set base_dir [pwd]
+
 project_open -revision ap_core src/fpga/build/gba_pocket.qpf
 set_global_assignment -name NUM_PARALLEL_PROCESSORS 4
 execute_flow -compile
 project_close
 
+# project_open changes cwd to the project directory; restore it
+cd $base_dir
+
 # Run custom STA report for detailed timing path analysis.
-# Uses -t (standalone script mode) instead of --report_script for reliability.
-# The script opens the project, creates the timing netlist, generates reports,
-# and cleans up on its own.
 file mkdir build_output/reports
 post_message "Running custom STA report..."
 if {[catch {qexec "quartus_sta -t scripts/sta_custom_report.tcl"} result]} {

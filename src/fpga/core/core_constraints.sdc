@@ -8,7 +8,7 @@
 # SDRAM Timing Constraints
 # ============================================================
 # SDRAM: AS4C32M16MSA-6BIN (512 Mbit, 166 MHz max, -6 speed grade)
-# dram_clk is driven directly from PLL outclk_1 (270° phase).
+# dram_clk is DDR-forwarded from PLL outclk_1 (~248° phase, 6831 ps).
 #
 # Write path (FPGA → SDRAM):
 #   tDS = 1.5 ns  (data/address/command setup to CLK)
@@ -26,8 +26,8 @@ create_generated_clock -name sdram_clk \
   [get_ports {dram_clk}]
 
 # Clock groups: sys_pll outputs 0 and 1 are phase-related (same VCO),
-# so they belong in the SAME group. Output 1 (clk_sys_90, 270° phase)
-# drives the SDRAM CLK pin directly from the PLL — no DDR primitive.
+# so they belong in the SAME group. Output 1 (clk_sys_90, ~248° phase)
+# is DDR-forwarded to the SDRAM CLK pin via altddio_out in the IOE.
 # sdram_clk (generated on dram_clk port) is derived from general[1]
 # and must be in the same group.
 # All four core clocks (sys 0°, sys 270°, vid 0°, vid 90°) now come from
@@ -61,10 +61,11 @@ set_input_delay -clock sdram_clk -max 6.0 [get_ports {dram_dq[*]}]
 set_input_delay -clock sdram_clk -min 2.5 [get_ports {dram_dq[*]}]
 
 # Multicycle path for SDRAM read capture:
-# With ~248° phase (6831 ps), the sdram_clk edge is ~6.8 ns after
-# sys_clk — less than tAC (6 ns). Data cannot be captured on that
-# immediate edge; it is captured one cycle later. Multicycle setup
-# of 2 gives the necessary relaxed timing window.
+# With ~248° phase (6831 ps), the sdram_clk edge is ~6.8 ns after sys_clk.
+# The next sys_clk edge is only ~3.1 ns later (9934 - 6831 ps), which is
+# less than tAC (6 ns) — data is NOT valid yet. It is captured on the
+# 2nd sys_clk edge (~13 ns after sdram_clk). Multicycle setup of 2
+# gives the fitter this relaxed timing window.
 set_multicycle_path -setup -from [get_clocks {sdram_clk}] \
   -to [get_clocks {ic|mp1|mf_pllbase_inst|sys_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk}] 2
 set_multicycle_path -hold -from [get_clocks {sdram_clk}] \

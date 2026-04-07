@@ -25,7 +25,7 @@
 
 module sdram_pocket (
     input  wire        clk,          // ~100 MHz system clock
-    input  wire        clk_sdram,    // ~100 MHz, 90° phase — drives SDRAM CLK pin directly
+    input  wire        clk_sdram,    // ~100 MHz, ~248° phase — DDR-forwarded to dram_clk pin
     input  wire        reset,        // Active-high reset (active while PLL not locked)
 
     // Ch1: ROM reads (active during gameplay)

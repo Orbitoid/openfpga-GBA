@@ -1,19 +1,17 @@
-// mf_pllbase_0002.v — Cyclone V Fractional-N PLLs for GBA core
+// mf_pllbase_0002.v — Cyclone V Fractional-N PLL for GBA core
 //
 // Input:  74.25 MHz (Pocket clk_74a)
 //
-// System PLL (sys_pll_i):
-//   Out 0:  100.663296 MHz (0 deg)   — GBA system clock (6 * 2^24 Hz)
-//   Out 1:  100.663296 MHz (270 deg, 7451 ps) — SDRAM clock (driven directly to pin, no DDR primitive)
+// Unified PLL (sys_pll_i) — all four clocks from a single fractional PLL:
+//   Out 0:  100.663296 MHz (0 deg)          — GBA system clock (6 * 2^24 Hz)
+//   Out 1:  100.663296 MHz (~248 deg, 6831 ps) — SDRAM clock (DDR-forwarded to dram_clk pin)
+//   Out 2:  8.388608 MHz (0 deg)            — Video pixel clock (2× GBA dot clock)
+//   Out 3:  8.388608 MHz (90 deg)           — Video pixel clock (DDR)
+//   Out 4:  Unused (reserved)
 //
-// Video PLL (vid_pll_i):
-//   Out 2:  8.388608 MHz (0 deg)     — Video pixel clock (2× GBA dot clock)
-//   Out 3:  8.388608 MHz (90 deg)    — Video pixel clock (DDR)
-//
-// Out 4:  Unused (reserved)
-//
-// Two separate altera_pll instances are required because 100.663296 MHz
-// and 8.388608 MHz cannot share a single VCO with integer output dividers.
+// VCO = 6 × 100,663,296 = 603,979,776 Hz (fractional-N)
+// C0=6, C1=6 (phase-shifted), C2=72, C3=72 (phase-shifted)
+// Single PLL frees the second fPLL for future use.
 
 `timescale 1ns/10ps
 module mf_pllbase_0002 (
@@ -29,7 +27,7 @@ module mf_pllbase_0002 (
 
 	// All four clocks from a single fractional PLL.
 	// VCO = 6 × 100,663,296 = 603,979,776 Hz
-	// C0=6 → 100.663296 MHz, C1=6 → 100.663296 MHz (270°)
+	// C0=6 → 100.663296 MHz, C1=6 → 100.663296 MHz (~248°, 6831 ps)
 	// C2=72 → 8.388608 MHz,  C3=72 → 8.388608 MHz (90°)
 	// This frees the second fPLL, allowing SDRAM phase tuning.
 

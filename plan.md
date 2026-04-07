@@ -80,7 +80,7 @@ timing that varies across hardware revisions.
 
 ## Step 1: Identify the failing internal paths
 
-**Status:** Blocked — awaiting first build with custom STA fix
+**Status:** COMPLETE
 
 **Goal:** Determine exactly which register-to-register paths are responsible
 for the -1.197 ns system clock setup violation.
@@ -115,40 +115,33 @@ detail to decide where to intervene.
 
 ## Step 2: Reduce ALM utilization
 
-**Goal:** Get utilization below ~85% to give the fitter room to optimize.
+**Status:** COMPLETE — infeasible without feature cuts
 
-**Why:** At 89% (16,392 / 18,480 ALMs), Quartus cannot move logic around
-without creating new timing violations elsewhere. The seed sweep variation
-of 0.5 ns between best and worst seeds confirms the fitter is struggling
-with placement. Every subsequent optimization step will be more effective
-with headroom.
+**Assessment:** At 89% (16,392 / 18,480 ALMs), no features can be removed.
+The top consumers are all core GBA functionality:
+- gba_cpu: 4,597 ALMs (28%)
+- gba_gpu subsystem: ~6,500 ALMs (40%)
+- gba_memorymux: 1,428 ALMs (9%)
+- gba_dma: 1,361 ALMs (8%)
 
-**How:**
-1. Review the MiSTer GBA core for features not used on Pocket:
-   - DDR3 SDRAM interface (ddr_sdram module) — MiSTer supports both SDR
-     and DDR3; Pocket only has SDR
-   - Third SDRAM channel (ch3 in MiSTer's sdram.sv, used for BRAM/save)
-     if save is handled differently on Pocket
-   - HPS I/O, OSD, and other MiSTer framework features that may have left
-     vestigial logic
-2. Check for duplicate or redundant synchronizers, especially on CDC paths
-   between clock domains
-3. Look at block RAM utilization (281/308 = 91%) — some distributed RAM
-   implemented in ALMs might be convertible to block RAM, but RAM blocks
-   are also tight
-4. Check if the synthesis settings (already aggressive) are over-duplicating
-   registers via PHYSICAL_SYNTHESIS_REGISTER_DUPLICATION — the fitter report
-   shows retiming recovered 3328 ps and created 300 register duplicates;
-   verify these are all helpful
-5. Profile which modules consume the most ALMs using the fitter report's
-   resource usage by entity section
+Synthesis/fitter settings are already aggressively speed-oriented
+(OPTIMIZATION_TECHNIQUE SPEED, register duplication, router logic
+duplication, low packing effort, 2x placement effort). Flipping these
+toward area would trade timing margin for space — counterproductive
+when worst slack is -0.300 ns. Register duplications in the fitter
+report are all DSP input packing (mul_op1 bits), not wasteful.
 
-**Acceptance criteria:** Utilization below 85%, or a documented assessment
-of why further reduction isn't feasible without feature cuts.
+Block RAM is also tight at 91% (281/308), limiting distributed→block
+RAM conversion opportunities.
+
+Proceeding to Step 3 with targeted RTL fixes on the two identified
+failing path clusters.
 
 ---
 
 ## Step 3: Fix the critical internal timing paths
+
+**Status:** IN PROGRESS — 5 RTL fixes applied and built
 
 **Goal:** Close the -1.197 ns system clock setup violation, or reduce it
 to the point where a seed sweep can close it.
@@ -158,6 +151,56 @@ violations can cause the SDRAM controller to generate wrong addresses,
 wrong commands, or corrupt data — which directly explains the user's bug
 report. Even if the SDRAM I/O timing is perfect, wrong data sent to the
 SDRAM means wrong data stored and read back.
+
+**Applied fixes (not yet built together):**
+
+1. **gba_cpu.vhd — MSR thumb pre-compute** (BUILT, confirmed working)
+   - Path: `execute_Rn_op1 → execute_addcycles` (was ~-0.3ns)
+   - Fix: Pre-compute `msr_thumb_will_change` flag in MSR_START, use registered
+     result in MSR_CPSR instead of live comparison
+   - Result: Path gone from top 80. Build showed overall whack-a-mole regression
+     but this path is definitively fixed.
+
+2. **gba_memorymux.vhd — SDRAM buffer hit pre-compute** (applied, not built)
+   - Path: `adr_save[8] → mem_bus_din[6]` (-1.214ns, worst path)
+   - Fix: Pre-compute `sdram_buf_hit_16` and `sdram_buf_hit_32` flags in IDLE
+     using `mem_bus_Adr` (before it becomes `adr_save`), use registered flags
+     in ADDR_DECODE instead of inline 22-bit comparison
+   - Safe because `sdram_addr_buf` only changes in WAIT_SDRAM state
+
+3. **gba_cpu.vhd — mul_result carry chain split** (applied, not built)
+   - Path: `mul_result[22] → mul_result[56]` (-0.979ns)
+   - Fix: Split 64-bit accumulate in MULADDLOW into 33-bit lower add + carry bit.
+     MULADDHIGH folds carry into upper 32-bit add. Non-long multiply paths only
+     use lower 32 bits so don't need carry propagation.
+
+4. **gba_drawer_mode0.vhd — scrollX register capture** (applied, not built)
+   - Path: `BG1HOFS|Dout_buffer[0] → x_scrolled[0]` (-0.840ns)
+   - Fix: Register `scrollX` port into `scrollX_reg` during IDLE state, use
+     registered copy in CALCADDR1. Safe because scroll register is stable
+     during scanline rendering.
+
+5. **gba_drawer_mode0.vhd — CALCADDR2/3 pipeline split** (applied, built)
+   - Path: `x_scrolled[0] → VRAM_byteaddr[12]` (-0.869ns after fix #4)
+   - Fix: Split CALCADDR2 into two states — CALCADDR2 computes tileindex,
+     new CALCADDR3 computes VRAM_byteaddr from registered tileindex.
+     Adds 1 cycle to per-pixel pipeline, within timing budget.
+   - Result: Path improved to -0.735ns
+
+**Build results after all 5 fixes (seed 7):**
+- sys_pll worst setup: -1.199ns (SDRAM dq pins dominate)
+- sys_pll TNS: -38.497ns (improved from -51.791 previous, -22.455 original)
+- sys_pll Fmax: 93.41 MHz (improved from 92.59 previous)
+- sdram_clk: +0.243ns fitter / -0.066ns final STA (was -0.041ns)
+- ALMs: 16,230 / 18,480 (88%)
+- Worst internal path: savestates -0.774ns (was -1.214ns memorymux)
+
+**Remaining top paths (not yet addressed):**
+- SDRAM dq read paths (-1.199 to -0.745ns) — external I/O, Step 4
+- Savestates `internal_bus_out.Adr → internal_databuffer` (-0.774ns) — improved
+  from -1.000ns but still present, broad combinational fan-out
+- BG mode0 `x_scrolled → VRAM_byteaddr` (-0.735ns) — within CALCADDR2
+  cycle (mod/div/add chain), could split further
 
 **How** (depends on Step 1 findings, but likely approaches):
 1. **Pipeline long combinational paths:** If the failing paths have large
