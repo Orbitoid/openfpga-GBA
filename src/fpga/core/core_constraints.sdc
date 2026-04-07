@@ -30,6 +30,10 @@ create_generated_clock -name sdram_clk \
 # drives the SDRAM CLK pin directly from the PLL — no DDR primitive.
 # sdram_clk (generated on dram_clk port) is derived from general[1]
 # and must be in the same group.
+# All four core clocks (sys 0°, sys 270°, vid 0°, vid 90°) now come from
+# a single fPLL (sys_pll_i), freeing the second fPLL for SDRAM phase tuning.
+# Video outputs (general[2], general[3]) cross through a framebuffer to
+# the sys_clk domain, so they are treated as asynchronous.
 set_clock_groups -asynchronous \
  -group { bridge_spiclk } \
  -group { clk_74a } \
@@ -37,8 +41,8 @@ set_clock_groups -asynchronous \
  -group { ic|mp1|mf_pllbase_inst|sys_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk \
           ic|mp1|mf_pllbase_inst|sys_pll_i|general[1].gpll~PLL_OUTPUT_COUNTER|divclk \
           sdram_clk } \
- -group { ic|mp1|mf_pllbase_inst|vid_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk } \
- -group { ic|mp1|mf_pllbase_inst|vid_pll_i|general[1].gpll~PLL_OUTPUT_COUNTER|divclk } \
+ -group { ic|mp1|mf_pllbase_inst|sys_pll_i|general[2].gpll~PLL_OUTPUT_COUNTER|divclk } \
+ -group { ic|mp1|mf_pllbase_inst|sys_pll_i|general[3].gpll~PLL_OUTPUT_COUNTER|divclk } \
  -group { ic|audio_out|audio_pll|mf_audio_pll_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk \
           ic|audio_out|audio_pll|mf_audio_pll_inst|altera_pll_i|general[1].gpll~PLL_OUTPUT_COUNTER|divclk }
 
@@ -57,17 +61,10 @@ set_input_delay -clock sdram_clk -max 6.0 [get_ports {dram_dq[*]}]
 set_input_delay -clock sdram_clk -min 2.5 [get_ports {dram_dq[*]}]
 
 # Multicycle path for SDRAM read capture:
-# With 270° phase, only 2.48 ns separates the sdram_clk edge from the
-# next clk_sys edge — less than tAC (6 ns). Data cannot be captured on
-# that immediate edge; it is captured one cycle later. Multicycle setup
-# of 2 gives 2.48 + 9.93 = 12.41 ns of available time, which easily
-# accommodates tAC. Without this, the fitter thrashes on an impossible
-# single-cycle target and degrades all other timing.
-# NOTE: STA shows ~-1.2 ns violation at slow corner (1100mV/85°C).
-# Multicycle 3 cannot be used because it pushes the last burst-4 word
-# capture past the SDRAM's output drive window (tOH margin < 20 ps).
-# The violation is conservative — actual silicon at typical conditions
-# has sufficient margin, confirmed by hardware testing.
+# With ~248° phase (6831 ps), the sdram_clk edge is ~6.8 ns after
+# sys_clk — less than tAC (6 ns). Data cannot be captured on that
+# immediate edge; it is captured one cycle later. Multicycle setup
+# of 2 gives the necessary relaxed timing window.
 set_multicycle_path -setup -from [get_clocks {sdram_clk}] \
   -to [get_clocks {ic|mp1|mf_pllbase_inst|sys_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk}] 2
 set_multicycle_path -hold -from [get_clocks {sdram_clk}] \

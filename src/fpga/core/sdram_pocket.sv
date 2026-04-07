@@ -408,13 +408,33 @@ always @(posedge clk) begin
 end
 
 // ============================================================
-// SDRAM Clock Output — driven directly from PLL at 90° phase
+// SDRAM Clock Output — DDR clock forwarding through IOE
 // ============================================================
-// Previous design used an ALTDDIO_OUT DDR primitive to shift the clock,
-// but that prevents the timing analyzer from constraining the path.
-// Driving from a dedicated PLL output gives a clean, timing-analyzable 90°
-// phase that centers the SDRAM clock edge in the data valid window.
+// altddio_out routes the clock through the IOE's dedicated DDR output
+// register, eliminating ~4.7ns of IC routing delay vs. a plain assign.
+// datain_h=1 / datain_l=0 produces a clock that follows clk_sdram
+// with only the IOE tCO delay (~0.5ns).
 
-assign dram_clk = clk_sdram;
+altddio_out #(
+    .extend_oe_disable("OFF"),
+    .intended_device_family("Cyclone V"),
+    .invert_output("OFF"),
+    .lpm_hint("UNUSED"),
+    .lpm_type("altddio_out"),
+    .oe_reg("UNREGISTERED"),
+    .power_up_high("OFF"),
+    .width(1)
+) sdram_clk_fwd (
+    .datain_h  (1'b1),
+    .datain_l  (1'b0),
+    .outclock  (clk_sdram),
+    .dataout   (dram_clk),
+    .aclr      (1'b0),
+    .aset      (1'b0),
+    .oe        (1'b1),
+    .outclocken(1'b1),
+    .sclr      (1'b0),
+    .sset      (1'b0)
+);
 
 endmodule
