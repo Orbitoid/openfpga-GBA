@@ -1723,10 +1723,12 @@ wire        analog_ce_pix;
 gba_analogizer_video #(
     .SYNC_ACTIVE_LOW (1'b1),
     .TEST_PATTERN    (1'b0),
-    .H_ACTIVE        (448),
-    .H_FP            (8),
+    .H_TOTAL         (560),
+    .H_ACTIVE        (480),
+    .H_FP            (4),
     .H_SYNC          (40),
-    // H_BP = 536 - 448 - 8 - 40 = 40
+    // H_BP = 560 - 480 - 4 - 40 = 36 (4.3 µs — enough for CRT colour clamping)
+    // H_rate = 8.388608 / 560 = 14.98 kHz; frame rate = 14.98k / 262 = 57.2 Hz
     // V: 50 top blank + 160 active + 49 front porch + 3 vsync = 262
     .V_TOP           (50),
     .V_FP            (49),
@@ -1751,9 +1753,9 @@ gba_analogizer_video #(
 );
 
 openFPGA_Pocket_Analogizer #(
-    // clk_vid = 8.388608 MHz; H_TOTAL = 536 → 15.65 kHz
+    // clk_vid = 8.388608 MHz; H_TOTAL = 560 → 14.98 kHz
     .MASTER_CLK_FREQ (8_388_608),
-    .LINE_LENGTH     (536)
+    .LINE_LENGTH     (560)
 ) analogizer (
     .i_clk              (clk_vid),
     .i_rst              (~pll_core_locked),

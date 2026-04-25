@@ -90,26 +90,14 @@ module gba_analogizer_video #(
         (v_count >= V_TOP + V_ACTIVE + V_FP) &&
         (v_count <  V_TOP + V_ACTIVE + V_FP + V_SYNC);
 
-    // ---- Horizontal nearest-neighbour scaler: H_ACTIVE output → SRC_W source ----
-    reg [8:0]  src_x;
-    reg [15:0] src_x_acc;
-
-    wire [16:0] src_x_acc_next = src_x_acc + SRC_W;
-
-    always @(posedge clk_vid) begin
-        if (reset || end_of_line) begin
-            src_x     <= '0;
-            src_x_acc <= '0;
-        end else if (h_active) begin
-            if (src_x_acc_next >= H_ACTIVE) begin
-                src_x_acc <= src_x_acc_next - H_ACTIVE;
-                if (src_x < SRC_W - 1)
-                    src_x <= src_x + 1'b1;
-            end else begin
-                src_x_acc <= src_x_acc_next[15:0];
-            end
-        end
-    end
+    // ---- Horizontal 2× scaling: each source pixel occupies 2 output cycles ----
+    // h_count[9:1] = h_count / 2, mapping h_count 0..479 → src_x 0..239.
+    // This aligns cleanly with the shared framebuffer read port: video_adapter
+    // returns CRT data on vid_ce=1 cycles (every other cycle), so with
+    // H_ACTIVE=480 there are exactly 240 read opportunities per line — one
+    // per source pixel — and each source pixel is displayed for exactly 2
+    // output cycles. No fractional accumulator needed.
+    wire [8:0] src_x = h_count[9:1];
 
     wire [8:0] src_y = v_count - V_TOP;
 
