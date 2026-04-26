@@ -7,17 +7,20 @@
 // framebuffer read port via time-division: video_adapter reads on vid_ce=1
 // cycles, this module reads on vid_ce=0 cycles. No extra M10K required.
 //
+// Framebuffer constraint: the BRAM delivers one pixel per 2 clk_vid cycles
+// (vid_ce cadence). Both modes MUST use src_x = h_pos[9:1] (2 output clocks
+// per source pixel). One-clock-per-pixel ("true 1x") is not achievable.
+//
 // Timing target (clk_vid = 8.388608 MHz, H_TOTAL=560, V_TOTAL=262):
 //   H_rate = 8.388608 / 560 = 14.98 kHz
 //   V_rate = 14.98 kHz / 262 = 57.2 Hz
 //
 // scale_mode input (from interact.json 0x8C, synced to clk_vid in core_top):
-//   0 = Exact 1x  — 240 pixels wide, centered in H_ACTIVE.
-//                   src_x = h_pos (one output clock per source pixel).
-//                   Image appears narrow on CRT; no fractional scaling shimmer.
-//   1 = Wide 2x   — H_ACTIVE (480) pixels wide.
-//                   src_x = h_pos >> 1 (two output clocks per source pixel).
-//                   Matches the shared-FB read cadence exactly.
+//   0 = Exact 1x  — Shows centre 120 GBA pixels (60..179) in a 240-clock
+//                   window centred in H_ACTIVE. Fits inside the TV safe area;
+//                   no pixel cutoff. Image is smaller with black borders.
+//   1 = Wide 2x   — H_ACTIVE (480) pixels wide, all 240 GBA pixels visible.
+//                   TV overscan may crop a few edge pixels depending on the TV.
 
 `default_nettype none
 
@@ -68,11 +71,12 @@ module gba_analogizer_video #(
     // ---- Scale mode decode ----
     wire mode_2x = (scale_mode == 2'd1);
 
-    // Active pixel window width and left offset within H_ACTIVE.
-    // Exact 1x: 240 pixels centered   (h_left = (H_ACTIVE-240)/2)
-    // Wide 2x:  H_ACTIVE pixels, left-aligned (h_left = 0)
-    localparam [9:0] LP_H_ACTIVE   = H_ACTIVE[9:0];
-    localparam [9:0] LP_H_LEFT_1X  = (H_ACTIVE - 240) / 2;
+    // Active pixel window: both modes use 2 output clocks per source pixel.
+    //   1x: 240-clock window centred in H_ACTIVE; shows GBA pixels 60..179.
+    //   2x: 480-clock window left-aligned; shows all 240 GBA pixels.
+    localparam [9:0] LP_H_ACTIVE   = H_ACTIVE[9:0];         // 480
+    localparam [9:0] LP_H_LEFT_1X  = (H_ACTIVE - 240) / 2; // 120
+    localparam [8:0] LP_SRC_OFS_1X = 9'd60;                 // skip first 60 GBA columns
 
     wire [9:0] h_active_dyn = mode_2x ? LP_H_ACTIVE  : 10'd240;
     wire [9:0] h_left       = mode_2x ? 10'd0         : LP_H_LEFT_1X;
@@ -118,11 +122,10 @@ module gba_analogizer_video #(
     // ---- Source pixel mapping ----
     wire [9:0] h_pos = h_count - h_left;
 
-    // Exact 1x: one output clock per source pixel (h_pos[8:0] directly)
-    // Wide 2x:  two output clocks per source pixel (h_pos[9:1] = h_pos/2)
-    //           This aligns with the shared-FB 2-cycle read cadence so every
-    //           source pixel is fetched exactly once per pair of output clocks.
-    wire [8:0] src_x = mode_2x ? h_pos[9:1] : h_pos[8:0];
+    // Both modes: 2 output clocks per source pixel (FB constraint).
+    // 1x centre-crop: offset by 60 to display GBA columns 60..179.
+    // 2x full-width:  offset 0, displays GBA columns 0..239.
+    wire [8:0] src_x = h_pos[9:1] + (mode_2x ? 9'd0 : LP_SRC_OFS_1X);
     wire [8:0] src_y = v_count - V_TOP;
 
     // src_y * 240 via shift-subtract (256 - 16 = 240)
