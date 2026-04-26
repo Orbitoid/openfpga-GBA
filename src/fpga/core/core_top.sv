@@ -1333,8 +1333,8 @@ reg [1:0] turbo_mode = 0; // 0 = Disabled, 1 = Turbo A, 2 = Turbo B
 // bits[13:10] = video type: 0=RGBS,1=RGsB,3=Y/C NTSC,4=Y/C PAL,+8=Pocket OFF
 reg [13:0] analogizer_settings = 14'd0;
 // CRT scale mode — written by interact.json at 0x8C
-// 0=Exact 1x (240px centered), 1=Wide 2x (480px full-width)
-reg [1:0] crt_scale_mode = 2'd0;
+// 0=Debug 1x, 1=Aspect/Normal, 2=Wide/Overscan
+reg [1:0] crt_scale_mode = 2'd1;
 `endif
 
 reg [13:0] reset_counter = 0;
@@ -1710,11 +1710,10 @@ gba_top #(
 
 `ifdef ANALOGIZER_ENABLE
 // ============================================================
-// Analogizer Video Output — CRT raster at 15.65 kHz / 59.73 Hz
+// Analogizer Video Output — CRT raster at 15.65 kHz / 59.7 Hz
 //
-// gba_analogizer_video generates CRT-compatible timing from a
-// duplicate framebuffer.  First build: TEST_PATTERN=1 to verify
-// CRT sync independent of framebuffer.  Change to 0 once locked.
+// gba_analogizer_video generates CRT-compatible timing from video_adapter's
+// shared framebuffer read port and a small scanline buffer.
 // ============================================================
 
 wire [23:0] analog_rgb;
@@ -1730,15 +1729,15 @@ wire        analog_ce_pix;
 gba_analogizer_video #(
     .SYNC_ACTIVE_LOW (1'b1),
     .TEST_PATTERN    (1'b0),
-    .H_TOTAL         (560),
+    .H_TOTAL         (536),
     .H_ACTIVE        (480),
     .H_FP            (4),
     .H_SYNC          (40),
-    // H_BP = 560 - 480 - 4 - 40 = 36 (4.3 µs — enough for CRT colour clamping)
-    // H_rate = 8.388608 / 560 = 14.98 kHz; frame rate = 14.98k / 262 = 57.2 Hz
-    // V: 50 top blank + 160 active + 49 front porch + 3 vsync = 262
-    .V_TOP           (50),
-    .V_FP            (49),
+    // H_BP = 536 - 480 - 4 - 40 = 12
+    // H_rate = 8.388608 / 536 = 15.65 kHz; frame rate = 15.65k / 262 = 59.7 Hz
+    // V: 51 top blank + 160 active + 48 front porch + 3 vsync = 262
+    .V_TOP           (51),
+    .V_FP            (48),
     .V_SYNC          (3)
 ) gba_crt (
     .clk_vid      (clk_vid),
@@ -1761,9 +1760,9 @@ gba_analogizer_video #(
 );
 
 openFPGA_Pocket_Analogizer #(
-    // clk_vid = 8.388608 MHz; H_TOTAL = 560 → 14.98 kHz
+    // clk_vid = 8.388608 MHz; H_TOTAL = 536 -> 15.65 kHz
     .MASTER_CLK_FREQ (8_388_608),
-    .LINE_LENGTH     (560)
+    .LINE_LENGTH     (536)
 ) analogizer (
     .i_clk              (clk_vid),
     .i_rst              (~pll_core_locked),

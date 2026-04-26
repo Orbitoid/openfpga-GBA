@@ -2,25 +2,20 @@
 //
 // Analogizer-only CRT raster generator for the GBA core.
 //
-// The duplicate framebuffer this originally used would exceed the device's
-// M10K BRAM budget. Instead, this module shares video_adapter's existing
-// framebuffer read port via time-division: video_adapter reads on vid_ce=1
-// cycles, this module reads on vid_ce=0 cycles. No extra M10K required.
+// This module shares video_adapter's existing framebuffer read port via
+// time-division: video_adapter reads on vid_ce=1 cycles, this module reads on
+// vid_ce=0 cycles. The shared port only returns one source pixel every two
+// clk_vid cycles, so this module prefetches each 240-pixel GBA line into a
+// small ping-pong line buffer before rasterizing it at CRT pixel rate.
 //
-// Framebuffer constraint: the BRAM delivers one pixel per 2 clk_vid cycles
-// (vid_ce cadence). Both modes MUST use src_x = h_pos[9:1] (2 output clocks
-// per source pixel). One-clock-per-pixel ("true 1x") is not achievable.
-//
-// Timing target (clk_vid = 8.388608 MHz, H_TOTAL=560, V_TOTAL=262):
-//   H_rate = 8.388608 / 560 = 14.98 kHz
-//   V_rate = 14.98 kHz / 262 = 57.2 Hz
+// Timing target (clk_vid = 8.388608 MHz, H_TOTAL=536, V_TOTAL=262):
+//   H_rate = 8.388608 / 536 = 15.65 kHz
+//   V_rate = 15.65 kHz / 262 = 59.7 Hz
 //
 // scale_mode input (from interact.json 0x8C, synced to clk_vid in core_top):
-//   0 = Exact 1x  — Shows centre 120 GBA pixels (60..179) in a 240-clock
-//                   window centred in H_ACTIVE. Fits inside the TV safe area;
-//                   no pixel cutoff. Image is smaller with black borders.
-//   1 = Wide 2x   — H_ACTIVE (480) pixels wide, all 240 GBA pixels visible.
-//                   TV overscan may crop a few edge pixels depending on the TV.
+//   0 = Debug 1x       240 output clocks, full GBA columns 0..239.
+//   1 = Aspect/Normal  320 output clocks, full GBA columns 0..239.
+//   2 = Wide/Overscan  480 output clocks, full GBA columns 0..239.
 
 `default_nettype none
 
@@ -31,22 +26,22 @@ module gba_analogizer_video #(
     parameter int SRC_H = 160,
 
     parameter int H_TOTAL  = 536,
-    parameter int H_ACTIVE = 448,
-    parameter int H_FP     = 16,
+    parameter int H_ACTIVE = 480,
+    parameter int H_FP     = 4,
     parameter int H_SYNC   = 40,
     parameter int H_BP     = H_TOTAL - H_ACTIVE - H_FP - H_SYNC,
 
     parameter int V_TOTAL  = 262,
     parameter int V_ACTIVE = 160,
     parameter int V_TOP    = 51,
-    parameter int V_FP     = 4,
+    parameter int V_FP     = 48,
     parameter int V_SYNC   = 3,
 
     parameter bit TEST_PATTERN = 1'b0
 ) (
     input  wire        clk_vid,
     input  wire        reset,
-    input  wire [1:0]  scale_mode,   // 0=Exact 1x, 1=Wide 2x
+    input  wire [1:0]  scale_mode,   // 0=Debug 1x, 1=Aspect/Normal, 2=Wide/Overscan
 
     // Shared framebuffer read port (from video_adapter, time-multiplexed)
     // video_adapter samples fb_rd_addr on vid_ce=0 cycles and returns data
@@ -69,17 +64,19 @@ module gba_analogizer_video #(
 );
 
     // ---- Scale mode decode ----
-    wire mode_2x = (scale_mode == 2'd1);
+    localparam [9:0] IMG_W_DEBUG  = 10'd240;
+    localparam [9:0] IMG_W_NORMAL = 10'd320;
+    localparam [9:0] IMG_W_WIDE   = 10'd480;
+    localparam [9:0] LP_H_ACTIVE  = H_ACTIVE;
+    localparam [10:0] LP_SRC_W    = SRC_W;
 
-    // Active pixel window: both modes use 2 output clocks per source pixel.
-    //   1x: 240-clock window centred in H_ACTIVE; shows GBA pixels 60..179.
-    //   2x: 480-clock window left-aligned; shows all 240 GBA pixels.
-    localparam [9:0] LP_H_ACTIVE   = H_ACTIVE[9:0];         // 480
-    localparam [9:0] LP_H_LEFT_1X  = (H_ACTIVE - 240) / 2; // 120
-    localparam [8:0] LP_SRC_OFS_1X = 9'd60;                 // skip first 60 GBA columns
+    wire mode_debug = (scale_mode == 2'd0);
+    wire mode_wide  = (scale_mode == 2'd2);
 
-    wire [9:0] h_active_dyn = mode_2x ? LP_H_ACTIVE  : 10'd240;
-    wire [9:0] h_left       = mode_2x ? 10'd0         : LP_H_LEFT_1X;
+    wire [9:0] image_width = mode_debug ? IMG_W_DEBUG :
+                             mode_wide  ? IMG_W_WIDE  :
+                                          IMG_W_NORMAL;
+    wire [9:0] image_left  = (LP_H_ACTIVE - image_width) >> 1;
 
     // ---- Raster counters ----
     reg [9:0] h_count;
@@ -103,12 +100,13 @@ module gba_analogizer_video #(
     end
 
     // ---- Active / sync regions ----
-    // h_active: full H_ACTIVE band — governs hblank signal
+    // h_active is the blanking/sync visible band. image_width is the scaled
+    // GBA image inside that band.
     wire h_active = (h_count < H_ACTIVE);
     wire v_active = (v_count >= V_TOP) && (v_count < V_TOP + V_ACTIVE);
 
-    // active_h: centering window within h_active — governs pixel output
-    wire active_h = (h_count >= h_left) && (h_count < h_left + h_active_dyn);
+    // active_h: centred image window within h_active.
+    wire active_h = (h_count >= image_left) && (h_count < image_left + image_width);
     wire active   = active_h && v_active;
 
     wire hsync_region =
@@ -119,33 +117,110 @@ module gba_analogizer_video #(
         (v_count >= V_TOP + V_ACTIVE + V_FP) &&
         (v_count <  V_TOP + V_ACTIVE + V_FP + V_SYNC);
 
-    // ---- Source pixel mapping ----
-    wire [9:0] h_pos = h_count - h_left;
+    // ---- Line-buffer prefetch ----
+    (* ramstyle = "MLAB" *) reg [17:0] linebuf [0:511];
 
-    // Both modes: 2 output clocks per source pixel (FB constraint).
-    // 1x centre-crop: offset by 60 to display GBA columns 60..179.
-    // 2x full-width:  offset 0, displays GBA columns 0..239.
-    wire [8:0] src_x = h_pos[9:1] + (mode_2x ? 9'd0 : LP_SRC_OFS_1X);
+    reg        prefetch_active;
+    reg        prefetch_buf;
+    reg [8:0]  prefetch_x;
+    reg [8:0]  prefetch_y;
+    reg        pending_valid;
+    reg        pending_buf;
+    reg [8:0]  pending_x;
+
+    wire prefetch_line =
+        (v_count >= V_TOP - 1) && (v_count < V_TOP + V_ACTIVE - 1);
+    wire [8:0] prefetch_line_y = v_count - (V_TOP - 1);
+
+    // prefetch_y * 240 via shift-subtract (256 - 16 = 240)
+    wire [16:0] prefetch_y_times_240 =
+        ({8'd0, prefetch_y} << 8) - ({8'd0, prefetch_y} << 4);
+    wire [16:0] prefetch_addr_calc = prefetch_y_times_240 + prefetch_x;
+
+    assign fb_rd_addr = (prefetch_active && (prefetch_x < SRC_W)) ?
+                        prefetch_addr_calc[15:0] : 16'd0;
+
+    always @(posedge clk_vid) begin
+        if (reset) begin
+            prefetch_active <= 1'b0;
+            prefetch_buf    <= 1'b0;
+            prefetch_x      <= '0;
+            prefetch_y      <= '0;
+            pending_valid   <= 1'b0;
+            pending_buf     <= 1'b0;
+            pending_x       <= '0;
+        end else begin
+            if (h_count == 10'd0) begin
+                prefetch_active <= prefetch_line;
+                prefetch_buf    <= prefetch_line_y[0];
+                prefetch_x      <= '0;
+                prefetch_y      <= prefetch_line_y;
+            end
+
+            if (fb_rd_valid && pending_valid) begin
+                pending_valid <= 1'b0;
+                if (pending_x == SRC_W - 1)
+                    prefetch_active <= 1'b0;
+                else
+                    prefetch_x <= pending_x + 1'b1;
+            end else if (!fb_rd_valid && prefetch_active && (prefetch_x < SRC_W)) begin
+                pending_valid <= 1'b1;
+                pending_buf   <= prefetch_buf;
+                pending_x     <= prefetch_x;
+            end
+        end
+    end
+
+    // ---- Source pixel mapping from line buffer ----
+    reg [8:0]  src_x_r;
+    reg [9:0]  scale_phase;
+
+    wire first_image_pixel = active_h && (h_count == image_left);
+    wire [8:0] src_x = first_image_pixel ? 9'd0 : src_x_r;
+
+    wire [10:0] scale_phase_base = {1'b0, (first_image_pixel ? 10'd0 : scale_phase)};
+    wire [10:0] scale_phase_sum = scale_phase_base + LP_SRC_W;
+    wire        scale_step_src  = (scale_phase_sum >= {1'b0, image_width});
+    wire [10:0] scale_phase_sub = scale_phase_sum - {1'b0, image_width};
+    wire [9:0]  scale_phase_next = scale_step_src ? scale_phase_sub[9:0] : scale_phase_sum[9:0];
+    wire [8:0]  src_x_next = (scale_step_src && (src_x < SRC_W - 1)) ?
+                             (src_x + 1'b1) : src_x;
+
+    always @(posedge clk_vid) begin
+        if (reset) begin
+            src_x_r     <= '0;
+            scale_phase <= '0;
+        end else if (active_h) begin
+            scale_phase <= scale_phase_next;
+            src_x_r     <= src_x_next;
+        end else begin
+            src_x_r     <= '0;
+            scale_phase <= '0;
+        end
+    end
+
     wire [8:0] src_y = v_count - V_TOP;
+    wire       output_buf = src_y[0];
+    wire [8:0] linebuf_wr_addr = {pending_buf, pending_x[7:0]};
+    wire [8:0] linebuf_rd_addr_next = {
+        v_active ? output_buf : 1'b0,
+        (active_h ? src_x_next[7:0] : 8'd0)
+    };
 
-    // src_y * 240 via shift-subtract (256 - 16 = 240)
-    wire [16:0] src_y_times_240 =
-        ({8'd0, src_y} << 8) - ({8'd0, src_y} << 4);
-    wire [16:0] read_addr_calc = src_y_times_240 + src_x;
-
-    // ---- Shared framebuffer read (via video_adapter time-multiplexed port) ----
-    // Clamp to address 0 outside the active centering window so we never
-    // request an out-of-range address when the result would be discarded anyway.
-    wire src_in_range = active_h && v_active && (src_x < SRC_W) && (src_y < SRC_H);
-    assign fb_rd_addr = src_in_range ? read_addr_calc[15:0] : 16'd0;
-
-    // Latch pixel whenever video_adapter delivers new data (vid_ce=1).
+    reg [8:0]  linebuf_rd_addr;
     reg [17:0] pixel_read;
     always @(posedge clk_vid) begin
         if (reset)
-            pixel_read <= '0;
-        else if (fb_rd_valid)
-            pixel_read <= fb_rd_data;
+            linebuf_rd_addr <= '0;
+        else
+            linebuf_rd_addr <= linebuf_rd_addr_next;
+    end
+
+    always @(posedge clk_vid) begin
+        if (fb_rd_valid && pending_valid)
+            linebuf[linebuf_wr_addr] <= fb_rd_data;
+
+        pixel_read <= linebuf[linebuf_rd_addr];
     end
 
     // 6-bit per channel → 8-bit (replicate top 2 bits into bottom 2)
@@ -162,16 +237,10 @@ module gba_analogizer_video #(
 
     wire [23:0] source_rgb = TEST_PATTERN ? test_rgb : {r8, g8, b8};
 
-    // ---- Output pipeline ----
-    reg active_d;
-    reg hsync_region_d;
-    reg vsync_region_d;
+    // ---- Output registers ----
 
     always @(posedge clk_vid) begin
         if (reset) begin
-            active_d       <= 1'b0;
-            hsync_region_d <= 1'b0;
-            vsync_region_d <= 1'b0;
             rgb    <= 24'h000000;
             hblank <= 1'b1;
             vblank <= 1'b1;
@@ -180,23 +249,19 @@ module gba_analogizer_video #(
             vsync  <= SYNC_ACTIVE_LOW ? 1'b1 : 1'b0;
             csync  <= SYNC_ACTIVE_LOW ? 1'b1 : 1'b0;
         end else begin
-            active_d       <= active;
-            hsync_region_d <= hsync_region;
-            vsync_region_d <= vsync_region;
-
-            rgb    <= active_d ? source_rgb : 24'h000000;
+            rgb    <= active ? source_rgb : 24'h000000;
             hblank <= ~h_active;
             vblank <= ~v_active;
-            blankn <= active_d;
+            blankn <= active;
 
             if (SYNC_ACTIVE_LOW) begin
-                hsync <= ~hsync_region_d;
-                vsync <= ~vsync_region_d;
-                csync <= ~(hsync_region_d ^ vsync_region_d);
+                hsync <= ~hsync_region;
+                vsync <= ~vsync_region;
+                csync <= ~(hsync_region ^ vsync_region);
             end else begin
-                hsync <= hsync_region_d;
-                vsync <= vsync_region_d;
-                csync <=  hsync_region_d ^ vsync_region_d;
+                hsync <= hsync_region;
+                vsync <= vsync_region;
+                csync <=  hsync_region ^ vsync_region;
             end
         end
     end

@@ -86,15 +86,19 @@
         "address": "0x8C",
         "persist": true,
         "writeonly": true,
-        "defaultval": 0,
+        "defaultval": 1,
         "options": [
           {
-            "name": "Exact 1x",
+            "name": "Debug 1x",
             "value": 0
           },
           {
-            "name": "Wide 2x",
+            "name": "Aspect / Normal",
             "value": 1
+          },
+          {
+            "name": "Wide / Overscan",
+            "value": 2
           }
         ]
       },
