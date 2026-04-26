@@ -7,9 +7,17 @@
 // framebuffer read port via time-division: video_adapter reads on vid_ce=1
 // cycles, this module reads on vid_ce=0 cycles. No extra M10K required.
 //
-// Timing target (clk_vid = 8.388608 MHz):
-//   H_TOTAL = 536  →  8.388608 / 536  ≈ 15.65 kHz
-//   V_TOTAL = 262  →  15.65 kHz / 262 ≈ 59.73 Hz
+// Timing target (clk_vid = 8.388608 MHz, H_TOTAL=560, V_TOTAL=262):
+//   H_rate = 8.388608 / 560 = 14.98 kHz
+//   V_rate = 14.98 kHz / 262 = 57.2 Hz
+//
+// scale_mode input (from interact.json 0x8C, synced to clk_vid in core_top):
+//   0 = Exact 1x  — 240 pixels wide, centered in H_ACTIVE.
+//                   src_x = h_pos (one output clock per source pixel).
+//                   Image appears narrow on CRT; no fractional scaling shimmer.
+//   1 = Wide 2x   — H_ACTIVE (480) pixels wide.
+//                   src_x = h_pos >> 1 (two output clocks per source pixel).
+//                   Matches the shared-FB read cadence exactly.
 
 `default_nettype none
 
@@ -35,6 +43,7 @@ module gba_analogizer_video #(
 ) (
     input  wire        clk_vid,
     input  wire        reset,
+    input  wire [1:0]  scale_mode,   // 0=Exact 1x, 1=Wide 2x
 
     // Shared framebuffer read port (from video_adapter, time-multiplexed)
     // video_adapter samples fb_rd_addr on vid_ce=0 cycles and returns data
@@ -55,6 +64,18 @@ module gba_analogizer_video #(
     output wire        video_clk,
     output wire        ce_pix
 );
+
+    // ---- Scale mode decode ----
+    wire mode_2x = (scale_mode == 2'd1);
+
+    // Active pixel window width and left offset within H_ACTIVE.
+    // Exact 1x: 240 pixels centered   (h_left = (H_ACTIVE-240)/2)
+    // Wide 2x:  H_ACTIVE pixels, left-aligned (h_left = 0)
+    localparam [9:0] LP_H_ACTIVE   = H_ACTIVE[9:0];
+    localparam [9:0] LP_H_LEFT_1X  = (H_ACTIVE - 240) / 2;
+
+    wire [9:0] h_active_dyn = mode_2x ? LP_H_ACTIVE  : 10'd240;
+    wire [9:0] h_left       = mode_2x ? 10'd0         : LP_H_LEFT_1X;
 
     // ---- Raster counters ----
     reg [9:0] h_count;
@@ -78,9 +99,13 @@ module gba_analogizer_video #(
     end
 
     // ---- Active / sync regions ----
+    // h_active: full H_ACTIVE band — governs hblank signal
     wire h_active = (h_count < H_ACTIVE);
     wire v_active = (v_count >= V_TOP) && (v_count < V_TOP + V_ACTIVE);
-    wire active   = h_active && v_active;
+
+    // active_h: centering window within h_active — governs pixel output
+    wire active_h = (h_count >= h_left) && (h_count < h_left + h_active_dyn);
+    wire active   = active_h && v_active;
 
     wire hsync_region =
         (h_count >= H_ACTIVE + H_FP) &&
@@ -90,15 +115,14 @@ module gba_analogizer_video #(
         (v_count >= V_TOP + V_ACTIVE + V_FP) &&
         (v_count <  V_TOP + V_ACTIVE + V_FP + V_SYNC);
 
-    // ---- Horizontal 2× scaling: each source pixel occupies 2 output cycles ----
-    // h_count[9:1] = h_count / 2, mapping h_count 0..479 → src_x 0..239.
-    // This aligns cleanly with the shared framebuffer read port: video_adapter
-    // returns CRT data on vid_ce=1 cycles (every other cycle), so with
-    // H_ACTIVE=480 there are exactly 240 read opportunities per line — one
-    // per source pixel — and each source pixel is displayed for exactly 2
-    // output cycles. No fractional accumulator needed.
-    wire [8:0] src_x = h_count[9:1];
+    // ---- Source pixel mapping ----
+    wire [9:0] h_pos = h_count - h_left;
 
+    // Exact 1x: one output clock per source pixel (h_pos[8:0] directly)
+    // Wide 2x:  two output clocks per source pixel (h_pos[9:1] = h_pos/2)
+    //           This aligns with the shared-FB 2-cycle read cadence so every
+    //           source pixel is fetched exactly once per pair of output clocks.
+    wire [8:0] src_x = mode_2x ? h_pos[9:1] : h_pos[8:0];
     wire [8:0] src_y = v_count - V_TOP;
 
     // src_y * 240 via shift-subtract (256 - 16 = 240)
@@ -107,13 +131,12 @@ module gba_analogizer_video #(
     wire [16:0] read_addr_calc = src_y_times_240 + src_x;
 
     // ---- Shared framebuffer read (via video_adapter time-multiplexed port) ----
-    // Always present the current read address; video_adapter reads it on vid_ce=0
-    // cycles and returns data on vid_ce=1 cycles (fb_rd_valid=1).
-    assign fb_rd_addr = read_addr_calc[15:0];
+    // Clamp to address 0 outside the active centering window so we never
+    // request an out-of-range address when the result would be discarded anyway.
+    wire src_in_range = active_h && v_active && (src_x < SRC_W) && (src_y < SRC_H);
+    assign fb_rd_addr = src_in_range ? read_addr_calc[15:0] : 16'd0;
 
     // Latch pixel whenever video_adapter delivers new data (vid_ce=1).
-    // pixel_read holds its value between updates, which is correct because
-    // src_x stays constant for ~1.87 consecutive output cycles on average.
     reg [17:0] pixel_read;
     always @(posedge clk_vid) begin
         if (reset)
@@ -122,7 +145,7 @@ module gba_analogizer_video #(
             pixel_read <= fb_rd_data;
     end
 
-    // 6-bit per channel → 8-bit
+    // 6-bit per channel → 8-bit (replicate top 2 bits into bottom 2)
     wire [7:0] r8 = {pixel_read[17:12], pixel_read[17:16]};
     wire [7:0] g8 = {pixel_read[11:6],  pixel_read[11:10]};
     wire [7:0] b8 = {pixel_read[5:0],   pixel_read[5:4]};

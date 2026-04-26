@@ -25,3 +25,24 @@ echo ""
 
 echo "=== Done! ==="
 echo "Bitstream: $RBF_R"
+
+# ---- Auto-copy to SD card ----
+# Looks for any /media/orbit/<folder>/Cores/mincer_ray.GBA_Analogizer/ directory.
+SD_CORE=""
+for dir in /media/orbit/*/; do
+    if [ -d "${dir}Cores/mincer_ray.GBA_Analogizer" ]; then
+        SD_CORE="${dir}Cores/mincer_ray.GBA_Analogizer"
+        break
+    fi
+done
+
+if [ -n "$SD_CORE" ]; then
+    echo ""
+    echo "=== Copying to SD card: $SD_CORE ==="
+    cp "$RBF_R"                                    "$SD_CORE/bitstream.rbf_r"
+    cp "$PROJECT_DIR/pkg/Cores/mincer_ray.GBA_Analogizer/interact.json" "$SD_CORE/interact.json"
+    echo "Copied bitstream.rbf_r and interact.json"
+else
+    echo ""
+    echo "(SD card not found — skipping copy)"
+fi
