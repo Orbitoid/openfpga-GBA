@@ -3,22 +3,42 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-STATE_DIR="$PROJECT_DIR/build_output/background-build"
+
+TARGET="normal"
+if [ "${1:-}" = "--analogizer" ]; then
+  TARGET="analogizer"
+  shift
+fi
+
+if [ "$TARGET" = "analogizer" ]; then
+  TARGET_ARG=" --analogizer"
+  STATE_DIR="$PROJECT_DIR/build_output/background-build-analogizer"
+  RBF="$PROJECT_DIR/src/fpga/build/output_files/ap_core_analogizer.rbf"
+  RBF_R="$PROJECT_DIR/pkg/Cores/mincer_ray.GBA_Analogizer/bitstream.rbf_r"
+  STA_SUMMARY="$PROJECT_DIR/src/fpga/build/output_files/ap_core_analogizer.sta.summary"
+  GENERATE_TCL="generate_analogizer.tcl"
+  BUILD_LABEL="Analogizer Quartus Build"
+else
+  TARGET_ARG=""
+  STATE_DIR="$PROJECT_DIR/build_output/background-build"
+  RBF="$PROJECT_DIR/src/fpga/build/output_files/ap_core.rbf"
+  RBF_R="$PROJECT_DIR/pkg/Cores/mincer_ray.GBA/bitstream.rbf_r"
+  STA_SUMMARY="$PROJECT_DIR/src/fpga/build/output_files/ap_core.sta.summary"
+  GENERATE_TCL="generate.tcl"
+  BUILD_LABEL="Quartus Build"
+fi
+
 PID_FILE="$STATE_DIR/pid"
 STATUS_FILE="$STATE_DIR/status"
 EXIT_FILE="$STATE_DIR/exit_code"
 STARTED_FILE="$STATE_DIR/started_at"
 FINISHED_FILE="$STATE_DIR/finished_at"
 LOG_FILE="$STATE_DIR/quartus-build.log"
-
-RBF="$PROJECT_DIR/src/fpga/build/output_files/ap_core.rbf"
-RBF_R="$PROJECT_DIR/pkg/Cores/mincer_ray.GBA/bitstream.rbf_r"
-STA_SUMMARY="$PROJECT_DIR/src/fpga/build/output_files/ap_core.sta.summary"
 CLOCK_SUMMARY="$PROJECT_DIR/build_output/reports/ap_core.sta.clock_summary.rpt"
 
 usage() {
   cat <<'EOF'
-Usage: scripts/quartus-build-bg.sh <command>
+Usage: scripts/quartus-build-bg.sh [--analogizer] <command>
 
 Commands:
   start [--force]  Start a Quartus build in the background
@@ -28,6 +48,7 @@ Commands:
   stop             Stop the running background build process
 
 The build state and log are written to build_output/background-build/.
+With --analogizer, they are written to build_output/background-build-analogizer/.
 EOF
 }
 
@@ -65,7 +86,7 @@ print_summary() {
   local status
   status="$(status_value)"
 
-  echo "=== Background Quartus Build ==="
+  echo "=== Background $BUILD_LABEL ==="
   echo "Status: $status"
 
   if [ -f "$PID_FILE" ]; then
@@ -93,7 +114,7 @@ run_build() {
 
   local rc=0
 
-  echo "=== Starting Quartus build via Docker ==="
+  echo "=== Starting $BUILD_LABEL via Docker ==="
   echo "Project: $PROJECT_DIR"
   echo "Log: $LOG_FILE"
   echo ""
@@ -102,7 +123,7 @@ run_build() {
     -v "$PROJECT_DIR":/build \
     -w /build \
     raetro/quartus:21.1 \
-    quartus_sh -t generate.tcl || rc=$?
+    quartus_sh -t "$GENERATE_TCL" || rc=$?
 
   if [ "$rc" -eq 0 ]; then
     echo ""
@@ -143,7 +164,7 @@ start_build() {
       echo "A background Quartus build is already running."
       print_summary
       echo ""
-      echo "Use '$0 status' to check it or '$0 stop' to stop it."
+      echo "Use '$0$TARGET_ARG status' to check it or '$0$TARGET_ARG stop' to stop it."
       exit 0
     fi
 
@@ -155,9 +176,9 @@ start_build() {
   write_status starting
 
   if command -v setsid >/dev/null 2>&1; then
-    nohup setsid "$0" _run > "$LOG_FILE" 2>&1 &
+    nohup setsid "$0" ${TARGET_ARG# } _run > "$LOG_FILE" 2>&1 &
   else
-    nohup "$0" _run > "$LOG_FILE" 2>&1 &
+    nohup "$0" ${TARGET_ARG# } _run > "$LOG_FILE" 2>&1 &
   fi
   local pid=$!
   printf '%s\n' "$pid" > "$PID_FILE"
@@ -166,7 +187,7 @@ start_build() {
   print_summary
   echo ""
   echo "Continue working in this OpenCode session. When you want to rejoin the build result, run:"
-  echo "  $0 wait"
+  echo "  $0$TARGET_ARG wait"
 }
 
 status_build() {

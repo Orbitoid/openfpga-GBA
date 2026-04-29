@@ -151,9 +151,24 @@ module gba_analogizer_video #(
     wire [8:0] output_y = v_count - image_top;
     wire [8:0] src_y = scale_y_to_src(output_y, mode_large);
 
-    // active_h: centred image window within h_active.
-    wire active_h = (h_count >= image_left) && (h_count < image_left + image_width);
+    // The line-buffer read path is two clocks deep. Start fetching two clocks
+    // before the visible window so the active gate lines up with pixel data.
+    wire [9:0] fetch_left = image_left - 10'd2;
+    wire active_h = (h_count >= fetch_left) && (h_count < fetch_left + image_width);
     wire active   = active_h && active_v;
+
+    reg active_d1;
+    reg active_d2;
+
+    always @(posedge clk_vid) begin
+        if (reset) begin
+            active_d1 <= 1'b0;
+            active_d2 <= 1'b0;
+        end else begin
+            active_d1 <= active;
+            active_d2 <= active_d1;
+        end
+    end
 
     wire hsync_region =
         (h_count >= H_ACTIVE + H_FP) &&
@@ -224,8 +239,10 @@ module gba_analogizer_video #(
     reg [8:0]  src_x_r;
     reg [9:0]  scale_phase;
 
-    wire first_image_pixel = active_h && (h_count == image_left);
-    wire [8:0] src_x = first_image_pixel ? 9'd0 : src_x_r;
+    wire first_image_pixel = active_h && (h_count == fetch_left);
+    // Crop the leftmost source column; the scaler clamps at SRC_W-1, so the
+    // rightmost source column gets the extra output slot.
+    wire [8:0] src_x = first_image_pixel ? 9'd1 : src_x_r;
 
     wire [10:0] scale_phase_base = {1'b0, (first_image_pixel ? 10'd0 : scale_phase)};
     wire [10:0] scale_phase_sum = scale_phase_base + LP_SRC_W;
@@ -246,13 +263,13 @@ module gba_analogizer_video #(
 
     always @(posedge clk_vid) begin
         if (reset) begin
-            src_x_r     <= '0;
+            src_x_r     <= 9'd1;
             scale_phase <= '0;
         end else if (active_h) begin
             scale_phase <= scale_phase_next;
             src_x_r     <= src_x_next;
         end else begin
-            src_x_r     <= '0;
+            src_x_r     <= 9'd1;
             scale_phase <= '0;
         end
     end
@@ -347,10 +364,10 @@ module gba_analogizer_video #(
             vsync  <= SYNC_ACTIVE_LOW ? 1'b1 : 1'b0;
             csync  <= SYNC_ACTIVE_LOW ? 1'b1 : 1'b0;
         end else begin
-            rgb    <= active ? source_rgb : 24'h000000;
+            rgb    <= active_d2 ? source_rgb : 24'h000000;
             hblank <= ~h_active;
             vblank <= ~active_v;
-            blankn <= active;
+            blankn <= active_d2;
 
             if (SYNC_ACTIVE_LOW) begin
                 hsync <= ~hsync_region;
