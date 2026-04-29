@@ -1333,8 +1333,8 @@ reg [1:0] turbo_mode = 0; // 0 = Disabled, 1 = Turbo A, 2 = Turbo B
 // bits[13:10] = video type: 0=RGBS,1=RGsB,3=Y/C NTSC,4=Y/C PAL,+8=Pocket OFF
 reg [13:0] analogizer_settings = 14'd0;
 // CRT scale mode — written by interact.json at 0x8C
-// 0=Debug 1x, 1=Aspect/Normal, 2=Wide/Overscan
-reg [1:0] crt_scale_mode = 2'd1;
+// 0=Debug 1x, 1=Aspect/Normal, 2=Wide/Overscan, 3=Aspect/Blend, 4=Blend +10%
+reg [2:0] crt_scale_mode = 3'd1;
 `endif
 
 reg [13:0] reset_counter = 0;
@@ -1352,7 +1352,7 @@ always @(posedge clk_74a) begin
         32'h88: turbo_mode <= bridge_wr_data[1:0];
 `ifdef ANALOGIZER_ENABLE
         32'hA0000000: analogizer_settings <= bridge_wr_data[13:0];
-        32'h8C:       crt_scale_mode      <= bridge_wr_data[1:0];
+        32'h8C:       crt_scale_mode      <= bridge_wr_data[2:0];
 `endif
         endcase
     end
@@ -1427,8 +1427,8 @@ synch_3 #(.WIDTH(14)) sync_analogizer_settings (
     analogizer_settings, analogizer_settings_s, clk_vid);
 wire [3:0] analogizer_video_type = analogizer_settings_s[13:10];
 // crt_scale_mode is in clk_74a domain; sync to clk_vid for gba_analogizer_video.
-wire [1:0] crt_scale_mode_vid;
-synch_3 #(.WIDTH(2)) sync_crt_scale (crt_scale_mode, crt_scale_mode_vid, clk_vid);
+wire [2:0] crt_scale_mode_vid;
+synch_3 #(.WIDTH(3)) sync_crt_scale (crt_scale_mode, crt_scale_mode_vid, clk_vid);
 // Pocket OFF when bit[3] of video type is set (types 8-15)
 wire pocket_off_vid = analogizer_video_type[3];
 assign video_rgb  = pocket_off_vid ? 24'h0 : vid_rgb_int;

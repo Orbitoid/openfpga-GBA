@@ -17,6 +17,7 @@
 //   1 = Aspect/Normal  320 output clocks, nearest-neighbor GBA columns 0..239.
 //   2 = Wide/Overscan  480 output clocks, full GBA columns 0..239.
 //   3 = Aspect/Blend   320 output clocks, horizontally interpolated.
+//   4 = Blend +10%     352x176 output clocks, horizontally interpolated.
 
 `default_nettype none
 
@@ -42,7 +43,7 @@ module gba_analogizer_video #(
 ) (
     input  wire        clk_vid,
     input  wire        reset,
-    input  wire [1:0]  scale_mode,   // 0=Debug 1x, 1=Aspect/Normal, 2=Wide/Overscan
+    input  wire [2:0]  scale_mode,   // 0=Debug 1x, 1=Aspect/Normal, 2=Wide/Overscan, 3/4=Blend
 
     // Shared framebuffer read port (from video_adapter, time-multiplexed)
     // video_adapter samples fb_rd_addr on vid_ce=0 cycles and returns data
@@ -68,17 +69,54 @@ module gba_analogizer_video #(
     localparam [9:0] IMG_W_DEBUG  = 10'd240;
     localparam [9:0] IMG_W_NORMAL = 10'd320;
     localparam [9:0] IMG_W_WIDE   = 10'd480;
+    localparam [9:0] IMG_W_LARGE  = 10'd352;
+    localparam [8:0] IMG_H_NORMAL = 9'd160;
+    localparam [8:0] IMG_H_LARGE  = 9'd176;
     localparam [9:0] LP_H_ACTIVE  = H_ACTIVE;
     localparam [10:0] LP_SRC_W    = SRC_W;
 
-    wire mode_debug = (scale_mode == 2'd0);
-    wire mode_wide  = (scale_mode == 2'd2);
-    wire mode_blend = (scale_mode == 2'd3);
+    wire mode_debug = (scale_mode == 3'd0);
+    wire mode_wide  = (scale_mode == 3'd2);
+    wire mode_large = (scale_mode == 3'd4);
+    wire mode_blend = (scale_mode == 3'd3) || mode_large;
 
     wire [9:0] image_width = mode_debug ? IMG_W_DEBUG :
                              mode_wide  ? IMG_W_WIDE  :
+                             mode_large ? IMG_W_LARGE :
                                           IMG_W_NORMAL;
     wire [9:0] image_left  = (LP_H_ACTIVE - image_width) >> 1;
+    wire [8:0] image_height = mode_large ? IMG_H_LARGE : IMG_H_NORMAL;
+    wire [8:0] image_top = V_TOP - ((image_height - IMG_H_NORMAL) >> 1);
+
+    function automatic [8:0] scale_y_to_src;
+        input [8:0] out_y;
+        input       large_mode;
+        reg   [4:0] repeats;
+        begin
+            if (!large_mode) begin
+                scale_y_to_src = out_y;
+            end else begin
+                if      (out_y == 9'd0)   repeats = 5'd0;
+                else if (out_y <= 9'd11)  repeats = 5'd1;
+                else if (out_y <= 9'd22)  repeats = 5'd2;
+                else if (out_y <= 9'd33)  repeats = 5'd3;
+                else if (out_y <= 9'd44)  repeats = 5'd4;
+                else if (out_y <= 9'd55)  repeats = 5'd5;
+                else if (out_y <= 9'd66)  repeats = 5'd6;
+                else if (out_y <= 9'd77)  repeats = 5'd7;
+                else if (out_y <= 9'd88)  repeats = 5'd8;
+                else if (out_y <= 9'd99)  repeats = 5'd9;
+                else if (out_y <= 9'd110) repeats = 5'd10;
+                else if (out_y <= 9'd121) repeats = 5'd11;
+                else if (out_y <= 9'd132) repeats = 5'd12;
+                else if (out_y <= 9'd143) repeats = 5'd13;
+                else if (out_y <= 9'd154) repeats = 5'd14;
+                else if (out_y <= 9'd165) repeats = 5'd15;
+                else                       repeats = 5'd16;
+                scale_y_to_src = out_y - repeats;
+            end
+        end
+    endfunction
 
     // ---- Raster counters ----
     reg [9:0] h_count;
@@ -105,11 +143,13 @@ module gba_analogizer_video #(
     // h_active is the blanking/sync visible band. image_width is the scaled
     // GBA image inside that band.
     wire h_active = (h_count < H_ACTIVE);
-    wire v_active = (v_count >= V_TOP) && (v_count < V_TOP + V_ACTIVE);
+    wire active_v = (v_count >= image_top) && (v_count < image_top + image_height);
+    wire [8:0] output_y = v_count - image_top;
+    wire [8:0] src_y = scale_y_to_src(output_y, mode_large);
 
     // active_h: centred image window within h_active.
     wire active_h = (h_count >= image_left) && (h_count < image_left + image_width);
-    wire active   = active_h && v_active;
+    wire active   = active_h && active_v;
 
     wire hsync_region =
         (h_count >= H_ACTIVE + H_FP) &&
@@ -130,9 +170,12 @@ module gba_analogizer_video #(
     reg        pending_buf;
     reg [8:0]  pending_x;
 
-    wire prefetch_line =
-        (v_count >= V_TOP - 1) && (v_count < V_TOP + V_ACTIVE - 1);
-    wire [8:0] prefetch_line_y = v_count - (V_TOP - 1);
+    wire prefetch_line_candidate =
+        (v_count >= image_top - 1'b1) && (v_count < image_top + image_height - 1'b1);
+    wire [8:0] prefetch_output_y = v_count - (image_top - 1'b1);
+    wire [8:0] prefetch_line_y = scale_y_to_src(prefetch_output_y, mode_large);
+    wire prefetch_line_repeats_current = active_v && (prefetch_line_y == src_y);
+    wire prefetch_line = prefetch_line_candidate && !prefetch_line_repeats_current;
 
     // prefetch_y * 240 via shift-subtract (256 - 16 = 240)
     wire [16:0] prefetch_y_times_240 =
@@ -189,10 +232,13 @@ module gba_analogizer_video #(
                              (src_x + 1'b1) : src_x;
     wire [8:0]  src_x_blend_next = (src_x < SRC_W - 1) ? (src_x + 1'b1) : src_x;
 
-    wire [1:0] blend_weight_next = (scale_phase_base < 11'd80)  ? 2'd0 :
-                                   (scale_phase_base < 11'd160) ? 2'd1 :
-                                   (scale_phase_base < 11'd240) ? 2'd2 :
-                                                                  2'd3;
+    wire [10:0] blend_q1 = {1'b0, image_width[9:2]};
+    wire [10:0] blend_q2 = {1'b0, image_width[9:1]};
+    wire [10:0] blend_q3 = blend_q1 + blend_q2;
+    wire [1:0] blend_weight_next = (scale_phase_base < blend_q1) ? 2'd0 :
+                                   (scale_phase_base < blend_q2) ? 2'd1 :
+                                   (scale_phase_base < blend_q3) ? 2'd2 :
+                                                                    2'd3;
 
     always @(posedge clk_vid) begin
         if (reset) begin
@@ -207,15 +253,14 @@ module gba_analogizer_video #(
         end
     end
 
-    wire [8:0] src_y = v_count - V_TOP;
     wire       output_buf = src_y[0];
     wire [8:0] linebuf_wr_addr = {pending_buf, pending_x[7:0]};
     wire [8:0] linebuf_rd_addr_next = {
-        v_active ? output_buf : 1'b0,
+        active_v ? output_buf : 1'b0,
         (active_h ? src_x[7:0] : 8'd0)
     };
     wire [8:0] linebuf_rd_addr_blend_next = {
-        v_active ? output_buf : 1'b0,
+        active_v ? output_buf : 1'b0,
         (active_h ? src_x_blend_next[7:0] : 8'd0)
     };
 
@@ -300,7 +345,7 @@ module gba_analogizer_video #(
         end else begin
             rgb    <= active ? source_rgb : 24'h000000;
             hblank <= ~h_active;
-            vblank <= ~v_active;
+            vblank <= ~active_v;
             blankn <= active;
 
             if (SYNC_ACTIVE_LOW) begin

@@ -86,7 +86,7 @@
         "address": "0x8C",
         "persist": true,
         "writeonly": true,
-        "defaultval": 1,
+        "defaultval": 3,
         "options": [
           {
             "name": "Debug 1x",
@@ -103,6 +103,10 @@
           {
             "name": "Aspect / Blend",
             "value": 3
+          },
+          {
+            "name": "Aspect / Blend +10%",
+            "value": 4
           }
         ]
       },
