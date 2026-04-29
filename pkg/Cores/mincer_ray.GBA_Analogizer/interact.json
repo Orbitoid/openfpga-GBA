@@ -86,27 +86,27 @@
         "address": "0x8C",
         "persist": true,
         "writeonly": true,
-        "defaultval": 3,
+        "defaultval": 4,
         "options": [
           {
-            "name": "Debug 1x",
-            "value": 0
-          },
-          {
-            "name": "Aspect / Normal",
-            "value": 1
-          },
-          {
-            "name": "Wide / Overscan",
-            "value": 2
+            "name": "Aspect / Blend +15%",
+            "value": 4
           },
           {
             "name": "Aspect / Blend",
             "value": 3
           },
           {
-            "name": "Aspect / Blend +10%",
-            "value": 4
+            "name": "No Scale / Square",
+            "value": 0
+          },
+          {
+            "name": "Small / Stretch",
+            "value": 1
+          },
+          {
+            "name": "Wide / Overscan",
+            "value": 2
           }
         ]
       },

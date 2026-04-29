@@ -1334,7 +1334,7 @@ reg [1:0] turbo_mode = 0; // 0 = Disabled, 1 = Turbo A, 2 = Turbo B
 reg [13:0] analogizer_settings = 14'd0;
 // CRT scale mode — written by interact.json at 0x8C
 // 0=Debug 1x, 1=Aspect/Normal, 2=Wide/Overscan, 3=Aspect/Blend, 4=Blend +10%
-reg [2:0] crt_scale_mode = 3'd1;
+reg [2:0] crt_scale_mode = 3'd4;
 `endif
 
 reg [13:0] reset_counter = 0;
