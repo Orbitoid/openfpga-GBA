@@ -14,8 +14,9 @@
 //
 // scale_mode input (from interact.json 0x8C, synced to clk_vid in core_top):
 //   0 = Debug 1x       240 output clocks, full GBA columns 0..239.
-//   1 = Aspect/Normal  320 output clocks, full GBA columns 0..239.
+//   1 = Aspect/Normal  320 output clocks, nearest-neighbor GBA columns 0..239.
 //   2 = Wide/Overscan  480 output clocks, full GBA columns 0..239.
+//   3 = Aspect/Blend   320 output clocks, horizontally interpolated.
 
 `default_nettype none
 
@@ -72,6 +73,7 @@ module gba_analogizer_video #(
 
     wire mode_debug = (scale_mode == 2'd0);
     wire mode_wide  = (scale_mode == 2'd2);
+    wire mode_blend = (scale_mode == 2'd3);
 
     wire [9:0] image_width = mode_debug ? IMG_W_DEBUG :
                              mode_wide  ? IMG_W_WIDE  :
@@ -185,6 +187,12 @@ module gba_analogizer_video #(
     wire [9:0]  scale_phase_next = scale_step_src ? scale_phase_sub[9:0] : scale_phase_sum[9:0];
     wire [8:0]  src_x_next = (scale_step_src && (src_x < SRC_W - 1)) ?
                              (src_x + 1'b1) : src_x;
+    wire [8:0]  src_x_blend_next = (src_x < SRC_W - 1) ? (src_x + 1'b1) : src_x;
+
+    wire [1:0] blend_weight_next = (scale_phase_base < 11'd80)  ? 2'd0 :
+                                   (scale_phase_base < 11'd160) ? 2'd1 :
+                                   (scale_phase_base < 11'd240) ? 2'd2 :
+                                                                  2'd3;
 
     always @(posedge clk_vid) begin
         if (reset) begin
@@ -204,29 +212,68 @@ module gba_analogizer_video #(
     wire [8:0] linebuf_wr_addr = {pending_buf, pending_x[7:0]};
     wire [8:0] linebuf_rd_addr_next = {
         v_active ? output_buf : 1'b0,
-        (active_h ? src_x_next[7:0] : 8'd0)
+        (active_h ? src_x[7:0] : 8'd0)
+    };
+    wire [8:0] linebuf_rd_addr_blend_next = {
+        v_active ? output_buf : 1'b0,
+        (active_h ? src_x_blend_next[7:0] : 8'd0)
     };
 
     reg [8:0]  linebuf_rd_addr;
+    reg [8:0]  linebuf_rd_addr_blend;
+    reg [1:0]  linebuf_rd_weight;
     reg [17:0] pixel_read;
+    reg [17:0] pixel_blend_read;
+    reg [1:0]  pixel_weight;
     always @(posedge clk_vid) begin
-        if (reset)
+        if (reset) begin
             linebuf_rd_addr <= '0;
-        else
+            linebuf_rd_addr_blend <= '0;
+            linebuf_rd_weight <= '0;
+        end else begin
             linebuf_rd_addr <= linebuf_rd_addr_next;
+            linebuf_rd_addr_blend <= linebuf_rd_addr_blend_next;
+            linebuf_rd_weight <= blend_weight_next;
+        end
     end
 
     always @(posedge clk_vid) begin
         if (fb_rd_valid && pending_valid)
             linebuf[linebuf_wr_addr] <= fb_rd_data;
 
-        pixel_read <= linebuf[linebuf_rd_addr];
+        pixel_read       <= linebuf[linebuf_rd_addr];
+        pixel_blend_read <= linebuf[linebuf_rd_addr_blend];
+        pixel_weight     <= linebuf_rd_weight;
     end
 
     // 6-bit per channel → 8-bit (replicate top 2 bits into bottom 2)
     wire [7:0] r8 = {pixel_read[17:12], pixel_read[17:16]};
     wire [7:0] g8 = {pixel_read[11:6],  pixel_read[11:10]};
     wire [7:0] b8 = {pixel_read[5:0],   pixel_read[5:4]};
+
+    wire [7:0] r8_blend = {pixel_blend_read[17:12], pixel_blend_read[17:16]};
+    wire [7:0] g8_blend = {pixel_blend_read[11:6],  pixel_blend_read[11:10]};
+    wire [7:0] b8_blend = {pixel_blend_read[5:0],   pixel_blend_read[5:4]};
+
+    function automatic [7:0] interp8;
+        input [7:0] a;
+        input [7:0] b;
+        input [1:0] weight;
+        begin
+            case (weight)
+                2'd1: interp8 = (({2'b00, a} << 1) + {2'b00, a} + {2'b00, b} + 10'd2) >> 2;
+                2'd2: interp8 = ({1'b0, a} + {1'b0, b} + 9'd1) >> 1;
+                2'd3: interp8 = ({2'b00, a} + ({2'b00, b} << 1) + {2'b00, b} + 10'd2) >> 2;
+                default: interp8 = a;
+            endcase
+        end
+    endfunction
+
+    wire [23:0] blended_rgb = {
+        interp8(r8, r8_blend, pixel_weight),
+        interp8(g8, g8_blend, pixel_weight),
+        interp8(b8, b8_blend, pixel_weight)
+    };
 
     // ---- Optional sync test pattern ----
     wire [23:0] test_rgb =
@@ -235,7 +282,9 @@ module gba_analogizer_video #(
         (h_count < (H_ACTIVE / 4) * 3) ? 24'h0000FF :
                                           24'hFFFFFF;
 
-    wire [23:0] source_rgb = TEST_PATTERN ? test_rgb : {r8, g8, b8};
+    wire [23:0] source_rgb = TEST_PATTERN ? test_rgb :
+                             mode_blend   ? blended_rgb :
+                                            {r8, g8, b8};
 
     // ---- Output registers ----
 

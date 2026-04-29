@@ -99,6 +99,10 @@
           {
             "name": "Wide / Overscan",
             "value": 2
+          },
+          {
+            "name": "Aspect / Blend",
+            "value": 3
           }
         ]
       },
