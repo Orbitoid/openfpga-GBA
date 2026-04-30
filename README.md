@@ -1,8 +1,8 @@
 # GBA for Analogue Pocket
 
-[![Latest Release](https://img.shields.io/github/v/tag/mincer-ray/openfpga-GBA?label=latest)](https://github.com/mincer-ray/openfpga-GBA/releases/latest) [![Downloads](https://img.shields.io/github/downloads/mincer-ray/openfpga-GBA/total)](https://github.com/mincer-ray/openfpga-GBA/releases) [![Platform](https://img.shields.io/badge/platform-Analogue%20Pocket-blue)](https://openfpga-library.github.io/analogue-pocket/)
+[![Latest Release](https://img.shields.io/github/v/tag/Orbitoid/openfpga-GBA?label=latest)](https://github.com/Orbitoid/openfpga-GBA/releases/latest) [![Downloads](https://img.shields.io/github/downloads/Orbitoid/openfpga-GBA/total)](https://github.com/Orbitoid/openfpga-GBA/releases) [![Platform](https://img.shields.io/badge/platform-Analogue%20Pocket-blue)](https://openfpga-library.github.io/analogue-pocket/)
 
-LLM assisted port of [MiSTer GBA core](https://github.com/MiSTer-devel/GBA_MiSTer)
+Analogizer-maintained fork by Orbitoid, based on [mincer-ray/openfpga-GBA](https://github.com/mincer-ray/openfpga-GBA), an LLM-assisted port of [MiSTer GBA core](https://github.com/MiSTer-devel/GBA_MiSTer).
 
 ## Features
 
@@ -24,7 +24,7 @@ LLM assisted port of [MiSTer GBA core](https://github.com/MiSTer-devel/GBA_MiSTe
 - **Rewind**
 - **Color correction outside default pocket filters**
 
-The original MiSTer core was built for an FPGA chip roughly twice the size of the one inside the Analogue Pocket. Some extras had to go to make it all fit. I tried to prioritize things that could be fixed with romhacks, for example there is a solar patch that fixes this issues without the core needing to do anything.
+The original MiSTer core was built for an FPGA chip roughly twice the size of the one inside the Analogue Pocket. Some extras had to go to make it all fit. The original Pocket port prioritized things that could be fixed with romhacks, for example there is a solar patch that fixes these issues without the core needing to do anything.
 
 ## RTC and Save Compatibility
 
@@ -36,9 +36,9 @@ The following tools can strip RTC data from a save file:
 
 ## Accuracy
 
-This core more or less replicates the current accuracy of the MiSTer GBA core. The features that were cut to fit the smaller FPGA were convenience features, not accuracy-related logic. It scores similarly to the MiSTer core in the mGBA test suite. If you encounter a game that works on MiSTer but not here, please open an issue.
+This core more or less replicates the current accuracy of the MiSTer GBA core. The features that were cut to fit the smaller FPGA were convenience features, not accuracy-related logic. It scores similarly to the MiSTer core in the mGBA test suite. If you encounter an Analogizer-specific issue, please open it on this fork.
 
-note: MiSTer core has an accuracy branch. A few of those changes have made it into this core but the bulk is still wip on a different branch and i have no ETA for that making it fully into this core.
+note: MiSTer core has an accuracy branch. A few of those changes have made it into this core but the bulk is still wip on a different branch.
 
 ## Installation
 
@@ -51,7 +51,7 @@ The core should be available on pocket manager apps, or you can install manually
 
 ## Analogizer Support
 
-This branch also builds a separate core named `GBA_Analogizer` in `Cores/mincer_ray.GBA_Analogizer/`. It enables the Pocket cartridge adapter pins for Analogizer-FPGA and uses a dedicated CRT raster path instead of sending the Pocket scaler output to the adapter.
+This branch also builds a separate core named `GBA_Analogizer` in `Cores/Orbitoid.GBA_Analogizer/`. It enables the Pocket cartridge adapter pins for Analogizer-FPGA and uses a dedicated CRT raster path instead of sending the Pocket scaler output to the adapter.
 
 The Analogizer build currently supports:
 
@@ -120,6 +120,7 @@ For the Analogizer build:
 ## Credits
 
 - **[MiSTer GBA core](https://github.com/MiSTer-devel/GBA_MiSTer)** — original FPGA GBA implementation
+- **[mincer-ray/openfpga-GBA](https://github.com/mincer-ray/openfpga-GBA)** — original Analogue Pocket port this Analogizer fork is based on
 - **[Analogue openFPGA](https://www.analogue.co/developer)** — platform framework and core template
 - **[budude2/openfpga-GBC](https://github.com/budude2/openfpga-GBC)** — reference for MiSTer-to-Pocket porting patterns
 - **[agg23](https://github.com/agg23)** — analogue-pocket-utils and reference SNES/NES Pocket cores

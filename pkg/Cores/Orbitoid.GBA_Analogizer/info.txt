@@ -1,0 +1,12 @@
+Analogizer-maintained fork by Orbitoid.
+
+Based on openfpga-GBA by mincer_ray.
+Original core GBA_MiSTer by MiSTer-devel contributors.
+
+Analogizer-FPGA adapter support based on RndMnkIII's Analogizer interface modules.
+Use this separate GBA_Analogizer core for analog video output through the cartridge adapter.
+
+Report Analogizer fork issues to https://github.com/Orbitoid/openfpga-GBA/issues.
+Do not report Analogizer-specific bugs to mincer_ray or the MiSTer repo.
+
+Licensed under GPL-2.0

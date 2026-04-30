@@ -24,7 +24,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bitstream
-          path: pkg/Cores/mincer_ray.GBA_Analogizer/bitstream.rbf_r
+          path: pkg/Cores/Orbitoid.GBA_Analogizer/bitstream.rbf_r
 
       - name: Extract timing closure failures
         if: always()
