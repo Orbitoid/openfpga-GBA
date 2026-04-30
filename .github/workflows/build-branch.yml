@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: ['**']
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -16,23 +16,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Compile
-        run: docker run --rm -v ${{ github.workspace }}:/build -w /build raetro/quartus:21.1 quartus_sh -t generate.tcl
-
-      - name: Reverse bitstream
-        run: python3 scripts/reverse_bitstream.py src/fpga/build/output_files/ap_core.rbf pkg/Cores/mincer_ray.GBA/bitstream.rbf_r
+      - name: Compile Analogizer
+        run: scripts/build_analogizer.sh
 
       - name: Upload bitstream
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: bitstream
-          path: pkg/Cores/mincer_ray.GBA/bitstream.rbf_r
+          path: pkg/Cores/mincer_ray.GBA_Analogizer/bitstream.rbf_r
 
       - name: Extract timing closure failures
         if: always()
         run: |
-          STA="src/fpga/build/output_files/ap_core.sta.summary"
+          STA="src/fpga/build/output_files/ap_core_analogizer.sta.summary"
           if [ -f "$STA" ]; then
             awk '
               /^Type/  { type_line = $0 }
@@ -74,9 +71,9 @@ jobs:
         with:
           name: reports
           path: |
-            src/fpga/build/output_files/ap_core.fit.summary
-            src/fpga/build/output_files/ap_core.fit.rpt
-            src/fpga/build/output_files/ap_core.sta.summary
-            src/fpga/build/output_files/ap_core.sta.rpt
-            src/fpga/build/output_files/ap_core.flow.rpt
+            src/fpga/build/output_files/ap_core_analogizer.fit.summary
+            src/fpga/build/output_files/ap_core_analogizer.fit.rpt
+            src/fpga/build/output_files/ap_core_analogizer.sta.summary
+            src/fpga/build/output_files/ap_core_analogizer.sta.rpt
+            src/fpga/build/output_files/ap_core_analogizer.flow.rpt
             build_output/reports/
