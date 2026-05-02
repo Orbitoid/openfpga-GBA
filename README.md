@@ -42,12 +42,13 @@ note: MiSTer core has an accuracy branch. A few of those changes have made it in
 
 ## Installation
 
-The core should be available on pocket manager apps, or you can install manually:
+The Analogizer core should be available from this fork's releases, or you can install manually:
 
 1. Download the latest release
-2. Copy the 3 folders `Cores/`, `Platforms/`, `Assets/`  to your SD card
-   - **macOS users:** Note: macOS Finder replaces folders instead of merging them so do it all manually and be careful.
+2. Copy the 3 folders `Cores/`, `Platforms/`, `Assets/` to your SD card
+   - **macOS users:** Finder replaces folders instead of merging them, so copy folder contents carefully.
 3. Place your ROMs and `gba_bios.bin` in `/Assets/gba/common/`
+4. Launch `GBA_Analogizer` on the Pocket when using the Analogizer-FPGA adapter
 
 ## Analogizer Support
 
@@ -79,23 +80,42 @@ The Analogizer video path uses `clk_vid` timing at about 15.65 kHz / 59.7 Hz, pr
 
 ## Building from Source
 
-Should be very easy
+The Analogizer build is self-contained in this repo. A fresh clone plus Docker is enough to build the Quartus bitstream and generate a ready-to-copy SD card package.
 
 ### Prerequisites
 
 - Docker
 - `raetro/quartus:21.1` Docker image
+- Python 3 on the host, used after Quartus to reverse the generated bitstream
+- `zip` is optional; when present, the build script also creates a local SD card package archive
 
-### Build
+### Build Analogizer
+
+```bash
+docker pull raetro/quartus:21.1
+./scripts/build_analogizer.sh
+```
+
+The script runs Quartus inside Docker, reverses the generated `.rbf`, writes the Pocket bitstream to `pkg/Cores/Orbitoid.GBA_Analogizer/bitstream.rbf_r`, and prints the timing summary. If `zip` is installed, it also creates `build_output/Orbitoid.GBA_Analogizer-dev.zip` with the same SD card layout used by releases.
+
+### Install A Local Build
+
+After a successful build, either unzip `build_output/Orbitoid.GBA_Analogizer-dev.zip` to the root of your Pocket SD card, or manually copy these folders from `pkg/` to the SD card root:
+
+```bash
+Cores/
+Platforms/
+Assets/
+```
+
+Place ROMs and `gba_bios.bin` in `/Assets/gba/common/` on the SD card. Use the `GBA_Analogizer` core, not the normal `GBA` core, when connecting the Analogizer-FPGA adapter.
+
+### Build Normal Pocket Core
+
+The original non-Analogizer Pocket build is still available for comparison:
 
 ```bash
 ./scripts/build.sh
-```
-
-### Analogizer Build
-
-```bash
-./scripts/build_analogizer.sh
 ```
 
 ### Background Build

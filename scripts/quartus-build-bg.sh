@@ -16,6 +16,7 @@ if [ "$TARGET" = "analogizer" ]; then
   RBF="$PROJECT_DIR/src/fpga/build/output_files/ap_core_analogizer.rbf"
   RBF_R="$PROJECT_DIR/pkg/Cores/Orbitoid.GBA_Analogizer/bitstream.rbf_r"
   STA_SUMMARY="$PROJECT_DIR/src/fpga/build/output_files/ap_core_analogizer.sta.summary"
+  CLOCK_SUMMARY="$PROJECT_DIR/build_output/reports/ap_core_analogizer.sta.clock_summary.rpt"
   GENERATE_TCL="generate_analogizer.tcl"
   BUILD_LABEL="Analogizer Quartus Build"
 else
@@ -24,6 +25,7 @@ else
   RBF="$PROJECT_DIR/src/fpga/build/output_files/ap_core.rbf"
   RBF_R="$PROJECT_DIR/pkg/Cores/mincer_ray.GBA/bitstream.rbf_r"
   STA_SUMMARY="$PROJECT_DIR/src/fpga/build/output_files/ap_core.sta.summary"
+  CLOCK_SUMMARY="$PROJECT_DIR/build_output/reports/ap_core.sta.clock_summary.rpt"
   GENERATE_TCL="generate.tcl"
   BUILD_LABEL="Quartus Build"
 fi
@@ -34,7 +36,6 @@ EXIT_FILE="$STATE_DIR/exit_code"
 STARTED_FILE="$STATE_DIR/started_at"
 FINISHED_FILE="$STATE_DIR/finished_at"
 LOG_FILE="$STATE_DIR/quartus-build.log"
-CLOCK_SUMMARY="$PROJECT_DIR/build_output/reports/ap_core.sta.clock_summary.rpt"
 
 usage() {
   cat <<'EOF'
@@ -108,6 +109,7 @@ print_summary() {
 
 run_build() {
   mkdir_state
+  mkdir -p "$(dirname "$RBF_R")" "$PROJECT_DIR/build_output/reports"
   date -u '+%Y-%m-%dT%H:%M:%SZ' > "$STARTED_FILE"
   rm -f "$FINISHED_FILE" "$EXIT_FILE"
   write_status running
