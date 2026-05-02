@@ -26,6 +26,13 @@ jobs:
           name: bitstream
           path: pkg/Cores/Orbitoid.GBA_Analogizer/bitstream.rbf_r
 
+      - name: Upload dev package
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-package
+          path: build_output/Orbitoid.GBA_Analogizer-dev.zip
+
       - name: Extract timing closure failures
         if: always()
         run: |
