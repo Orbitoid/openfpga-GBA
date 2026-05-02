@@ -9,8 +9,8 @@
       "description": "Game Boy Advance (Analogizer)",
       "author": "Orbitoid",
       "url": "https://github.com/Orbitoid/openfpga-GBA",
-      "version": "0.4.0",
-      "date_release": "2026-04-09"
+      "version": "0.4.1",
+      "date_release": "2026-05-02"
     },
     "framework": {
       "target_product": "Analogue Pocket",
