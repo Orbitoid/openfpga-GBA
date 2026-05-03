@@ -2,7 +2,7 @@
 
 [![Latest Release](https://img.shields.io/github/v/tag/Orbitoid/openfpga-GBA?label=latest)](https://github.com/Orbitoid/openfpga-GBA/releases/latest) [![Downloads](https://img.shields.io/github/downloads/Orbitoid/openfpga-GBA/total)](https://github.com/Orbitoid/openfpga-GBA/releases) [![Platform](https://img.shields.io/badge/platform-Analogue%20Pocket-blue)](https://openfpga-library.github.io/analogue-pocket/)
 
-Analogizer-maintained fork by Orbitoid, based on [mincer-ray/openfpga-GBA](https://github.com/mincer-ray/openfpga-GBA), an LLM-assisted port of [MiSTer GBA core](https://github.com/MiSTer-devel/GBA_MiSTer).
+Analogizer-maintained fork (with some AI assistance), based on [mincer-ray/openfpga-GBA](https://github.com/mincer-ray/openfpga-GBA) which itself is an openFPGA port of: [MiSTer GBA core](https://github.com/MiSTer-devel/GBA_MiSTer).
 
 ## Features
 
