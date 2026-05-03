@@ -105,13 +105,24 @@ module gba_analogizer_video #(
         input [8:0] out_y;
         input       large_mode;
         input       full_mode;
+        reg [12:0] large_y40;
+        reg [26:0] large_scaled;
+        reg [10:0] full_y5;
+        reg [23:0] full_scaled;
         begin
             if (large_mode) begin
                 // Scaled Full Width keeps the old 2:1 output shape but uses a
                 // larger regular scale instead of the old +12.5% sizing.
-                scale_y_to_src = ({8'd0, out_y} * 17'd160) / {8'd0, IMG_H_LARGE};
+                // floor(out_y * 160 / 204) == floor((out_y * 40) / 51).
+                // Reciprocal multiply avoids inferring an lpm_divide block.
+                large_y40 = ({4'd0, out_y} << 5) + ({4'd0, out_y} << 3);
+                large_scaled = large_y40 * 14'd10281;
+                scale_y_to_src = large_scaled[26:19];
             end else if (full_mode) begin
-                scale_y_to_src = ({8'd0, out_y} * 17'd160) / {8'd0, IMG_H_FULL};
+                // floor(out_y * 160 / 224) == floor((out_y * 5) / 7).
+                full_y5 = ({2'd0, out_y} << 2) + {2'd0, out_y};
+                full_scaled = full_y5 * 11'd1171;
+                scale_y_to_src = full_scaled[21:13];
             end else begin
                 scale_y_to_src = out_y;
             end
