@@ -64,11 +64,12 @@ The Analogizer build currently supports:
 
 The `CRT Scale` core setting controls how the 240x160 GBA framebuffer is mapped to the 15 kHz Analogizer output:
 
-- **Aspect / Blend +12.5%** — Default larger blended mode, 360x180 output clocks.
+- **Scaled Full Width** — Default larger mode, 408x204 output clocks with horizontal interpolation and the same 2:1 output shape as the previous larger mode.
 - **Aspect / Blend** — 320-wide output with horizontal interpolation.
 - **No Scale / Square** — 240-wide output with square source pixels.
 - **Small / Stretch** — 320-wide nearest-neighbor output.
 - **Wide / Overscan** — 448-wide output for wider CRT fill.
+- **Full Screen / Square** — 336x224 nearest-neighbor output that uniformly scales the square-pixel mode, intentionally not matching GBA display aspect.
 
 The Analogizer video path uses `clk_vid` timing at about 15.65 kHz / 59.7 Hz, prefetches each GBA line through a small line buffer, and shares the existing framebuffer read port with the Pocket video adapter. Pocket screen output remains available unless a `Pocket OFF` Analogizer mode is selected.
 
@@ -81,6 +82,8 @@ The Analogizer video path uses `clk_vid` timing at about 15.65 kHz / 59.7 Hz, pr
 ## Building from Source
 
 The Analogizer build is self-contained in this repo. A fresh clone plus Docker is enough to build the Quartus bitstream and generate a ready-to-copy SD card package.
+
+Note for contributors and LLM agents: check `scripts/` before invoking tools directly. The build scripts provide the expected Quartus access, Docker environment, bitstream reversal, package generation, and timing-summary steps for this repo.
 
 ### Prerequisites
 

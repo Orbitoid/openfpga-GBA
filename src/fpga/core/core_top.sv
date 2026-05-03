@@ -1333,7 +1333,7 @@ reg [1:0] turbo_mode = 0; // 0 = Disabled, 1 = Turbo A, 2 = Turbo B
 // bits[13:10] = video type: 0=RGBS,1=RGsB,3=Y/C NTSC,4=Y/C PAL,+8=Pocket OFF
 reg [13:0] analogizer_settings = 14'd0;
 // CRT scale mode — written by interact.json at 0x8C
-// 0=Debug 1x, 1=Aspect/Normal, 2=Wide/Overscan, 3=Aspect/Blend, 4=Blend +10%
+// 0=Debug 1x, 1=Aspect/Normal, 2=Wide/Overscan, 3=Aspect/Blend, 4=Scaled Full Width, 5=Full Screen/Square
 reg [2:0] crt_scale_mode = 3'd4;
 `endif
 
@@ -1433,13 +1433,16 @@ synch_3 #(.WIDTH(3)) sync_crt_scale (crt_scale_mode, crt_scale_mode_vid, clk_vid
 wire pocket_off_vid = analogizer_video_type[3];
 assign video_rgb  = pocket_off_vid ? 24'h0 : vid_rgb_int;
 assign video_de   = pocket_off_vid ? 1'b0  : vid_de_int;
+assign video_vs   = pocket_off_vid ? 1'b0  : vid_vs_int;
+assign video_hs   = pocket_off_vid ? 1'b0  : vid_hs_int;
+assign video_skip = pocket_off_vid ? 1'b0  : vid_skip_int;
 `else
 assign video_rgb  = vid_rgb_int;
 assign video_de   = vid_de_int;
-`endif
 assign video_vs   = vid_vs_int;
 assign video_hs   = vid_hs_int;
 assign video_skip = vid_skip_int;
+`endif
 
 
 // ============================================================

@@ -17,7 +17,8 @@
 //   1 = Aspect/Normal  320 output clocks, nearest-neighbor GBA columns 0..239.
 //   2 = Wide/Overscan  448 output clocks, full GBA columns 0..239.
 //   3 = Aspect/Blend   320 output clocks, horizontally interpolated.
-//   4 = Blend +12.5%   360x180 output clocks, horizontally interpolated.
+//   4 = Scaled Full Width 408x204 output clocks, horizontally interpolated.
+//   5 = Full/Square     336x224 output clocks, uniform nearest-neighbor scaled.
 
 `default_nettype none
 
@@ -43,7 +44,7 @@ module gba_analogizer_video #(
 ) (
     input  wire        clk_vid,
     input  wire        reset,
-    input  wire [2:0]  scale_mode,   // 0=Debug 1x, 1=Aspect/Normal, 2=Wide/Overscan, 3/4=Blend
+    input  wire [2:0]  scale_mode,   // 0=Debug 1x, 1=Aspect/Normal, 2=Wide/Overscan, 3=Blend, 4=Scaled Full Width, 5=Full/Square
 
     // Shared framebuffer read port (from video_adapter, time-multiplexed)
     // video_adapter samples fb_rd_addr on vid_ce=0 cycles and returns data
@@ -69,55 +70,50 @@ module gba_analogizer_video #(
     localparam [9:0] IMG_W_DEBUG  = 10'd240;
     localparam [9:0] IMG_W_NORMAL = 10'd320;
     localparam [9:0] IMG_W_WIDE   = 10'd448;
-    localparam [9:0] IMG_W_LARGE  = 10'd360;
+    localparam [9:0] IMG_W_LARGE  = 10'd408;
+    // Keep enough horizontal margin for the line-buffer pipeline and analog
+    // porch timing. Too little margin here can disturb Y/C color decoding.
+    localparam [9:0] IMG_W_FULL   = 10'd336;
     localparam [8:0] IMG_H_NORMAL = 9'd160;
-    localparam [8:0] IMG_H_LARGE  = 9'd180;
+    localparam [8:0] IMG_H_LARGE  = 9'd204;
+    localparam [8:0] IMG_H_FULL   = 9'd224;
     localparam [9:0] LP_H_ACTIVE  = H_ACTIVE;
     localparam [10:0] LP_SRC_W    = SRC_W;
+    localparam [9:0] H_CENTER_OFFSET = 10'd6;
+    localparam [8:0] V_LARGE_OFFSET = 9'd10;
 
     wire mode_debug = (scale_mode == 3'd0);
     wire mode_wide  = (scale_mode == 3'd2);
     wire mode_large = (scale_mode == 3'd4);
+    wire mode_full  = (scale_mode == 3'd5);
     wire mode_blend = (scale_mode == 3'd3) || mode_large;
 
     wire [9:0] image_width = mode_debug ? IMG_W_DEBUG :
-                             mode_wide  ? IMG_W_WIDE  :
-                             mode_large ? IMG_W_LARGE :
-                                          IMG_W_NORMAL;
-    wire [9:0] image_left  = (LP_H_ACTIVE - image_width) >> 1;
-    wire [8:0] image_height = mode_large ? IMG_H_LARGE : IMG_H_NORMAL;
-    wire [8:0] image_top = V_TOP - ((image_height - IMG_H_NORMAL) >> 1);
+                              mode_wide  ? IMG_W_WIDE  :
+                              mode_large ? IMG_W_LARGE :
+                              mode_full  ? IMG_W_FULL  :
+                                           IMG_W_NORMAL;
+    wire [9:0] image_left  = ((LP_H_ACTIVE - image_width) >> 1) + H_CENTER_OFFSET;
+    wire [8:0] image_height = mode_large ? IMG_H_LARGE :
+                              mode_full  ? IMG_H_FULL  :
+                                           IMG_H_NORMAL;
+    wire [8:0] image_top = mode_full  ? 9'd23 :
+                            mode_large ? V_TOP - ((image_height - IMG_H_NORMAL) >> 1) + V_LARGE_OFFSET :
+                                         V_TOP - ((image_height - IMG_H_NORMAL) >> 1);
 
     function automatic [8:0] scale_y_to_src;
         input [8:0] out_y;
         input       large_mode;
-        reg   [4:0] repeats;
+        input       full_mode;
         begin
-            if (!large_mode) begin
-                scale_y_to_src = out_y;
+            if (large_mode) begin
+                // Scaled Full Width keeps the old 2:1 output shape but uses a
+                // larger regular scale instead of the old +12.5% sizing.
+                scale_y_to_src = ({8'd0, out_y} * 17'd160) / {8'd0, IMG_H_LARGE};
+            end else if (full_mode) begin
+                scale_y_to_src = ({8'd0, out_y} * 17'd160) / {8'd0, IMG_H_FULL};
             end else begin
-                if      (out_y <= 9'd7)   repeats = 5'd0;
-                else if (out_y <= 9'd16)  repeats = 5'd1;
-                else if (out_y <= 9'd25)  repeats = 5'd2;
-                else if (out_y <= 9'd34)  repeats = 5'd3;
-                else if (out_y <= 9'd43)  repeats = 5'd4;
-                else if (out_y <= 9'd52)  repeats = 5'd5;
-                else if (out_y <= 9'd61)  repeats = 5'd6;
-                else if (out_y <= 9'd70)  repeats = 5'd7;
-                else if (out_y <= 9'd79)  repeats = 5'd8;
-                else if (out_y <= 9'd88)  repeats = 5'd9;
-                else if (out_y <= 9'd97)  repeats = 5'd10;
-                else if (out_y <= 9'd106) repeats = 5'd11;
-                else if (out_y <= 9'd115) repeats = 5'd12;
-                else if (out_y <= 9'd124) repeats = 5'd13;
-                else if (out_y <= 9'd133) repeats = 5'd14;
-                else if (out_y <= 9'd142) repeats = 5'd15;
-                else if (out_y <= 9'd151) repeats = 5'd16;
-                else if (out_y <= 9'd160) repeats = 5'd17;
-                else if (out_y <= 9'd169) repeats = 5'd18;
-                else if (out_y <= 9'd178) repeats = 5'd19;
-                else                       repeats = 5'd20;
-                scale_y_to_src = out_y - repeats;
+                scale_y_to_src = out_y;
             end
         end
     endfunction
@@ -149,11 +145,12 @@ module gba_analogizer_video #(
     wire h_active = (h_count < H_ACTIVE);
     wire active_v = (v_count >= image_top) && (v_count < image_top + image_height);
     wire [8:0] output_y = v_count - image_top;
-    wire [8:0] src_y = scale_y_to_src(output_y, mode_large);
+    wire [8:0] src_y = scale_y_to_src(output_y, mode_large, mode_full);
 
     // The line-buffer read path is two clocks deep. Start fetching two clocks
     // before the visible window so the active gate lines up with pixel data.
     wire [9:0] fetch_left = image_left - 10'd2;
+    wire fetch_h = (h_count >= fetch_left) && (h_count < fetch_left + image_width + 10'd2);
     wire active_h = (h_count >= fetch_left) && (h_count < fetch_left + image_width);
     wire active   = active_h && active_v;
 
@@ -192,7 +189,7 @@ module gba_analogizer_video #(
     wire prefetch_line_candidate =
         (v_count >= image_top - 1'b1) && (v_count < image_top + image_height - 1'b1);
     wire [8:0] prefetch_output_y = v_count - (image_top - 1'b1);
-    wire [8:0] prefetch_line_y = scale_y_to_src(prefetch_output_y, mode_large);
+    wire [8:0] prefetch_line_y = scale_y_to_src(prefetch_output_y, mode_large, mode_full);
     wire prefetch_line_repeats_current = active_v && (prefetch_line_y == src_y);
     wire prefetch_line = prefetch_line_candidate && !prefetch_line_repeats_current;
 
@@ -239,10 +236,8 @@ module gba_analogizer_video #(
     reg [8:0]  src_x_r;
     reg [9:0]  scale_phase;
 
-    wire first_image_pixel = active_h && (h_count == fetch_left);
-    // Crop the leftmost source column; the scaler clamps at SRC_W-1, so the
-    // rightmost source column gets the extra output slot.
-    wire [8:0] src_x = first_image_pixel ? 9'd1 : src_x_r;
+    wire first_image_pixel = fetch_h && (h_count == fetch_left);
+    wire [8:0] src_x = first_image_pixel ? 9'd0 : src_x_r;
 
     wire [10:0] scale_phase_base = {1'b0, (first_image_pixel ? 10'd0 : scale_phase)};
     wire [10:0] scale_phase_sum = scale_phase_base + LP_SRC_W;
@@ -263,13 +258,13 @@ module gba_analogizer_video #(
 
     always @(posedge clk_vid) begin
         if (reset) begin
-            src_x_r     <= 9'd1;
+            src_x_r     <= 9'd0;
             scale_phase <= '0;
-        end else if (active_h) begin
+        end else if (fetch_h) begin
             scale_phase <= scale_phase_next;
             src_x_r     <= src_x_next;
         end else begin
-            src_x_r     <= 9'd1;
+            src_x_r     <= 9'd0;
             scale_phase <= '0;
         end
     end
@@ -278,16 +273,18 @@ module gba_analogizer_video #(
     wire [8:0] linebuf_wr_addr = {pending_buf, pending_x[7:0]};
     wire [8:0] linebuf_rd_addr_next = {
         active_v ? output_buf : 1'b0,
-        (active_h ? src_x[7:0] : 8'd0)
+        (fetch_h ? src_x[7:0] : 8'd0)
     };
     wire [8:0] linebuf_rd_addr_blend_next = {
         active_v ? output_buf : 1'b0,
-        (active_h ? src_x_blend_next[7:0] : 8'd0)
+        (fetch_h ? src_x_blend_next[7:0] : 8'd0)
     };
 
     reg [8:0]  linebuf_rd_addr;
     reg [8:0]  linebuf_rd_addr_blend;
     reg [1:0]  linebuf_rd_weight;
+    reg [8:0]  src_x_d1;
+    reg [8:0]  src_x_d2;
     reg [17:0] pixel_read;
     reg [17:0] pixel_blend_read;
     reg [1:0]  pixel_weight;
@@ -296,10 +293,14 @@ module gba_analogizer_video #(
             linebuf_rd_addr <= '0;
             linebuf_rd_addr_blend <= '0;
             linebuf_rd_weight <= '0;
+            src_x_d1 <= '0;
+            src_x_d2 <= '0;
         end else begin
             linebuf_rd_addr <= linebuf_rd_addr_next;
             linebuf_rd_addr_blend <= linebuf_rd_addr_blend_next;
             linebuf_rd_weight <= blend_weight_next;
+            src_x_d1 <= fetch_h ? src_x : 9'd0;
+            src_x_d2 <= src_x_d1;
         end
     end
 
@@ -341,12 +342,13 @@ module gba_analogizer_video #(
         interp8(b8, b8_blend, pixel_weight)
     };
 
-    // ---- Optional sync test pattern ----
+    // ---- Optional source-edge test pattern ----
     wire [23:0] test_rgb =
-        (h_count < (H_ACTIVE / 4) * 1) ? 24'hFF0000 :
-        (h_count < (H_ACTIVE / 4) * 2) ? 24'h00FF00 :
-        (h_count < (H_ACTIVE / 4) * 3) ? 24'h0000FF :
-                                          24'hFFFFFF;
+        (src_x_d2 == 9'd0)   ? 24'hFF0000 :
+        (src_x_d2 == 9'd1)   ? 24'h00FF00 :
+        (src_x_d2 == 9'd238) ? 24'h0000FF :
+        (src_x_d2 == 9'd239) ? 24'hFFFFFF :
+                               24'h080808;
 
     wire [23:0] source_rgb = TEST_PATTERN ? test_rgb :
                              mode_blend   ? blended_rgb :

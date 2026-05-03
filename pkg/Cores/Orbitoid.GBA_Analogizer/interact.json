@@ -89,7 +89,7 @@
         "defaultval": 0,
         "options": [
           {
-            "name": "Aspect / Blend +12.5%",
+            "name": "Scaled Full Width",
             "value": 4
           },
           {
@@ -107,6 +107,10 @@
           {
             "name": "Wide / Overscan",
             "value": 2
+          },
+          {
+            "name": "Full Screen / Square",
+            "value": 5
           }
         ]
       },
