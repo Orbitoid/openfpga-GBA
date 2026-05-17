@@ -92,7 +92,10 @@ yc_out yc_out (
     .clk      (i_clk),
     .PHASE_INC(CHROMA_PHASE_INC),
     .PAL_EN   (PALFLAG),
-    .hsync    (Hsync),
+    // yc_out starts the colorburst timer while hsync is high. The GBA CRT
+    // raster supplies active-low sync to the Analogizer pins, so invert only
+    // this internal timing input and leave Csync polarity unchanged below.
+    .hsync    (~Hsync),
     .vsync    (Vsync),
     .csync    (Csync),
     .din      ({R & {8{BLANKn}}, G & {8{BLANKn}}, B & {8{BLANKn}}}),
