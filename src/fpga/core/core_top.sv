@@ -1429,13 +1429,37 @@ wire [3:0] analogizer_video_type = analogizer_settings_s[13:10];
 // crt_scale_mode is in clk_74a domain; sync to clk_vid for gba_analogizer_video.
 wire [2:0] crt_scale_mode_vid;
 synch_3 #(.WIDTH(3)) sync_crt_scale (crt_scale_mode, crt_scale_mode_vid, clk_vid);
-// Pocket OFF when bit[3] of video type is set (types 8-15)
+// Pocket OFF when bit[3] of video type is set (types 8-15).
+// Send a full black frame with normal scaler timing before disabling the
+// Pocket-facing stream, otherwise the Pocket/dock can hold the last frame.
 wire pocket_off_vid = analogizer_video_type[3];
-assign video_rgb  = pocket_off_vid ? 24'h0 : vid_rgb_int;
-assign video_de   = pocket_off_vid ? 1'b0  : vid_de_int;
-assign video_vs   = pocket_off_vid ? 1'b0  : vid_vs_int;
-assign video_hs   = pocket_off_vid ? 1'b0  : vid_hs_int;
-assign video_skip = pocket_off_vid ? 1'b0  : vid_skip_int;
+reg        pocket_off_active;
+reg  [1:0] pocket_off_blank_frames;
+
+always @(posedge clk_vid) begin
+    if (~pll_core_locked) begin
+        pocket_off_active       <= 1'b0;
+        pocket_off_blank_frames <= 2'd0;
+    end else begin
+        if (!pocket_off_vid) begin
+            pocket_off_active       <= 1'b0;
+            pocket_off_blank_frames <= 2'd0;
+        end else if (!pocket_off_active) begin
+            pocket_off_active       <= 1'b1;
+            pocket_off_blank_frames <= 2'd2;
+        end else if (vid_vs_int && (pocket_off_blank_frames != 0)) begin
+            pocket_off_blank_frames <= pocket_off_blank_frames - 1'b1;
+        end
+    end
+end
+
+wire pocket_off_disabled = pocket_off_active && (pocket_off_blank_frames == 0);
+
+assign video_rgb  = pocket_off_active ? 24'h0 : vid_rgb_int;
+assign video_de   = pocket_off_disabled ? 1'b0 : vid_de_int;
+assign video_vs   = pocket_off_disabled ? 1'b0 : vid_vs_int;
+assign video_hs   = pocket_off_disabled ? 1'b0 : vid_hs_int;
+assign video_skip = pocket_off_disabled ? 1'b0 : vid_skip_int;
 `else
 assign video_rgb  = vid_rgb_int;
 assign video_de   = vid_de_int;
